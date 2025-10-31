@@ -1,0 +1,415 @@
+---
+description: 项目结构规范，定义项目组织方式、目录结构和命名约定
+globs:
+alwaysApply: true
+---
+# 项目结构规范
+
+## 项目概述
+
+本项目是一个基于 **Hono + OpenAPI** 的单一 API 服务项目，采用类型安全的开发方式，包含以下核心特性：
+- **类型安全**：使用 TypeScript 和 Zod 确保类型安全
+- **API 文档**：自动生成 OpenAPI 规范文档
+- **结构化日志**：使用 Pino 进行结构化日志记录
+- **数据库**：使用 Drizzle ORM 和 Turso 数据库
+- **测试**：使用 Vitest 进行单元测试
+- **代码质量**：使用 ESLint 进行代码检查
+
+## 根目录结构
+
+```
+expo-updates-api/
+├── src/                      # 源代码目录
+│   ├── app.ts                # 应用主入口（导出 Hono 应用）
+│   ├── index.ts              # 本地开发入口（启动 Node.js 服务器）
+│   ├── env.ts                # 环境变量配置（使用 Zod 验证）
+│   ├── db/                   # 数据库相关
+│   │   ├── index.ts          # 数据库连接配置
+│   │   ├── schema.ts         # 数据库模式定义
+│   │   └── migrations/       # 数据库迁移文件
+│   ├── lib/                  # 工具库和配置
+│   │   ├── create-app.ts     # 应用创建函数
+│   │   ├── configure-open-api.ts  # OpenAPI 配置
+│   │   ├── constants.ts      # 常量定义
+│   │   ├── types.ts          # 类型定义
+│   │   └── zod-utils.ts      # Zod 工具函数
+│   ├── middlewares/          # 中间件
+│   │   └── pino-logger.ts    # Pino 日志中间件
+│   └── routes/               # 路由定义
+│       ├── index.route.ts    # 根路由
+│       └── tasks/            # 任务相关路由（示例）
+│           ├── tasks.index.ts      # 路由注册
+│           ├── tasks.routes.ts     # OpenAPI 路由定义
+│           ├── tasks.handlers.ts  # 请求处理函数
+│           └── tasks.test.ts       # 单元测试
+├── drizzle.config.ts         # Drizzle ORM 配置
+├── eslint.config.mjs         # ESLint 配置
+├── vitest.config.ts          # Vitest 测试配置
+├── tsconfig.json             # TypeScript 配置
+├── package.json              # 项目依赖配置
+└── README.md                 # 项目说明文档
+```
+
+## 源代码目录结构 (src/)
+
+### 应用入口
+
+#### `src/app.ts`
+- **作用**：应用主入口文件，导出 Hono 应用实例
+- **职责**：
+  - 创建应用实例
+  - 配置 OpenAPI
+  - 注册所有路由
+  - 导出 `AppType` 类型（用于类型安全的客户端）
+
+#### `src/index.ts`
+- **作用**：本地开发入口文件，启动 Node.js 服务器
+- **职责**：
+  - 导入应用实例
+  - 读取环境变量
+  - 启动 HTTP 服务器
+  - 监听指定端口
+
+#### `src/env.ts`
+- **作用**：环境变量配置和验证
+- **职责**：
+  - 使用 Zod 定义环境变量模式
+  - 验证必需的环境变量
+  - 提供类型安全的环境变量访问
+  - 根据环境（开发/测试/生产）加载不同的配置文件
+
+### 数据库目录 (src/db/)
+
+#### `src/db/index.ts`
+- **作用**：数据库连接配置
+- **职责**：
+  - 创建数据库客户端实例
+  - 配置连接参数
+  - 导出数据库客户端和查询构建器
+
+#### `src/db/schema.ts`
+- **作用**：数据库模式定义
+- **职责**：
+  - 使用 Drizzle ORM 定义表结构
+  - 定义表之间的关系
+  - 导出模式类型（用于类型推断）
+
+#### `src/db/migrations/`
+- **作用**：数据库迁移文件目录
+- **内容**：
+  - SQL 迁移文件（由 Drizzle Kit 生成）
+  - 迁移元数据（`meta/` 目录）
+  - 迁移记录（`_journal.json`）
+
+### 工具库目录 (src/lib/)
+
+#### `src/lib/create-app.ts`
+- **作用**：应用和路由创建函数
+- **职责**：
+  - `createApp()`：创建 Hono 应用实例，配置中间件
+  - `createRouter()`：创建 OpenAPI 路由实例
+  - `createTestApp()`：创建测试用的应用实例
+
+#### `src/lib/configure-open-api.ts`
+- **作用**：OpenAPI 配置
+- **职责**：
+  - 配置 OpenAPI 元数据
+  - 设置 API 文档端点
+  - 配置 Scalar API 文档界面
+
+#### `src/lib/constants.ts`
+- **作用**：常量定义
+- **职责**：
+  - 定义应用级别的常量
+  - 定义枚举值
+  - 定义配置常量
+
+#### `src/lib/types.ts`
+- **作用**：类型定义
+- **职责**：
+  - 定义应用级别的类型
+  - 定义中间件绑定类型
+  - 定义 OpenAPI 相关类型
+
+#### `src/lib/zod-utils.ts`
+- **作用**：Zod 工具函数
+- **职责**：
+  - 提供常用的 Zod 模式
+  - 提供验证函数
+  - 提供类型转换函数
+
+### 中间件目录 (src/middlewares/)
+
+#### `src/middlewares/pino-logger.ts`
+- **作用**：Pino 日志中间件
+- **职责**：
+  - 配置 Pino 日志记录器
+  - 集成到 Hono 应用
+  - 提供结构化日志记录
+
+### 路由目录 (src/routes/)
+
+#### 路由组织方式
+
+每个功能模块的路由应该放在独立的目录中，目录结构如下：
+
+```
+routes/
+├── index.route.ts           # 根路由
+└── {module}/                # 功能模块目录（如 tasks）
+    ├── {module}.index.ts   # 路由注册文件
+    ├── {module}.routes.ts  # OpenAPI 路由定义
+    ├── {module}.handlers.ts # 请求处理函数
+    └── {module}.test.ts     # 单元测试文件
+```
+
+#### 路由文件说明
+
+##### `{module}.index.ts`
+- **作用**：路由注册文件
+- **职责**：
+  - 导入路由定义和处理函数
+  - 使用 `createRouter()` 创建路由实例
+  - 使用 `.openapi()` 注册路由
+  - 导出路由实例
+
+##### `{module}.routes.ts`
+- **作用**：OpenAPI 路由定义
+- **职责**：
+  - 使用 `@hono/zod-openapi` 定义路由
+  - 定义请求和响应模式（使用 Zod）
+  - 定义路由元数据（路径、方法、标签等）
+  - 导出路由定义对象
+
+##### `{module}.handlers.ts`
+- **作用**：请求处理函数
+- **职责**：
+  - 实现路由的业务逻辑
+  - 处理请求参数验证
+  - 调用数据库操作
+  - 返回类型化的响应
+  - 导出处理函数
+
+##### `{module}.test.ts`
+- **作用**：单元测试文件
+- **职责**：
+  - 使用 Vitest 编写测试用例
+  - 测试路由的各种场景
+  - 测试错误处理
+  - 使用 `createTestApp()` 创建测试应用
+
+##### `index.route.ts`
+- **作用**：根路由（可选）
+- **职责**：
+  - 定义根路径（`/`）的处理
+  - 提供 API 健康检查
+  - 提供 API 信息
+
+## 配置文件
+
+### `drizzle.config.ts`
+- **作用**：Drizzle ORM 配置
+- **配置项**：
+  - `schema`：数据库模式文件路径
+  - `out`：迁移文件输出目录
+  - `dialect`：数据库方言（如 "turso"）
+  - `casing`：命名约定（如 "snake_case"）
+  - `dbCredentials`：数据库连接凭证
+
+### `tsconfig.json`
+- **作用**：TypeScript 配置
+- **配置项**：
+  - `paths`：路径别名配置（如 `@/*` 映射到 `./src/*`）
+  - `jsx`：JSX 配置（支持 Hono JSX）
+  - `baseUrl`：基础路径
+  - `module`：模块系统
+
+### `eslint.config.mjs`
+- **作用**：ESLint 配置
+- **配置**：使用 `@antfu/eslint-config` 作为基础配置
+
+### `vitest.config.ts`
+- **作用**：Vitest 测试配置
+- **配置项**：
+  - 测试环境设置
+  - 测试文件匹配模式
+  - 覆盖率配置
+
+## 命名约定
+
+### 文件命名规范
+
+- **应用文件**：使用 kebab-case，如 `create-app.ts`、`configure-open-api.ts`
+- **路由文件**：使用 kebab-case，如 `tasks.routes.ts`、`tasks.handlers.ts`
+- **组件文件**：使用 kebab-case，如 `pino-logger.ts`
+- **类型文件**：使用 kebab-case，如 `types.ts`、`zod-utils.ts`
+- **配置文件**：使用标准名称，如 `drizzle.config.ts`、`vitest.config.ts`
+
+### 目录命名规范
+
+- **功能目录**：使用 kebab-case，如 `middlewares`、`routes`
+- **路由模块目录**：使用复数形式，如 `tasks`、`users`
+- **源码目录**：统一使用 `src/`
+- **测试文件**：与源文件同目录，添加 `.test.` 后缀
+
+### 变量和函数命名规范
+
+- **函数名**：使用 camelCase，如 `createApp()`、`createRouter()`
+- **类型名**：使用 PascalCase，如 `AppType`、`AppBindings`
+- **常量名**：使用 UPPER_SNAKE_CASE，如 `DATABASE_URL`
+- **路由名**：使用 kebab-case，如 `/api/tasks`
+
+## 依赖管理
+
+### 主要依赖
+
+- **Hono**：Web 框架
+- **@hono/zod-openapi**：OpenAPI 集成
+- **@hono/node-server**：Node.js 运行时支持
+- **Drizzle ORM**：类型安全的 ORM
+- **@libsql/client**：Turso 数据库客户端
+- **Zod**：运行时类型验证
+- **Pino**：结构化日志
+- **Stoker**：减少样板代码的工具
+- **@scalar/hono-api-reference**：API 文档界面
+
+### 开发依赖
+
+- **TypeScript**：类型系统
+- **Vitest**：测试框架
+- **Drizzle Kit**：数据库迁移工具
+- **ESLint**：代码检查
+- **tsx**：TypeScript 执行工具
+
+## 脚本约定
+
+- **开发**：`pnpm dev` - 启动开发服务器（使用 tsx watch）
+- **构建**：`pnpm build` - 构建项目（使用 tsc）
+- **启动**：`pnpm start` - 启动生产服务器
+- **测试**：`pnpm test` - 运行测试（使用 vitest）
+- **类型检查**：`pnpm typecheck` - 类型检查（使用 tsc）
+- **代码检查**：`pnpm lint` - 检查代码（使用 eslint）
+- **修复代码**：`pnpm lint:fix` - 自动修复代码问题
+
+## 环境变量
+
+### 必需环境变量
+
+- `DATABASE_URL`：数据库连接 URL（必需）
+- `DATABASE_AUTH_TOKEN`：数据库认证令牌（生产环境必需）
+- `LOG_LEVEL`：日志级别（必需）
+
+### 可选环境变量
+
+- `NODE_ENV`：运行环境（默认：development）
+- `PORT`：服务器端口（默认：9999）
+
+### 环境文件
+
+- `.env`：开发环境配置
+- `.env.test`：测试环境配置
+- `.env.production`：生产环境配置（不应提交到版本控制）
+
+## 开发最佳实践
+
+### 1. 路由开发
+
+- **路由分离**：每个功能模块使用独立的路由文件
+- **类型安全**：使用 OpenAPI 路由定义确保类型安全
+- **错误处理**：使用统一的错误处理机制
+- **测试覆盖**：为每个路由编写单元测试
+
+### 2. 数据库操作
+
+- **模式定义**：使用 Drizzle ORM 定义数据库模式
+- **迁移管理**：使用 Drizzle Kit 管理数据库迁移
+- **类型推断**：利用 Drizzle 的类型推断功能
+- **查询优化**：避免 N+1 查询问题
+
+### 3. 代码组织
+
+- **单一职责**：每个文件只负责一个功能
+- **DRY 原则**：避免重复代码，提取公共逻辑
+- **模块化**：保持模块之间的低耦合
+- **类型安全**：充分利用 TypeScript 类型系统
+
+### 4. 错误处理
+
+- **统一错误格式**：使用统一的错误响应格式
+- **错误日志**：记录详细的错误信息
+- **用户友好**：返回用户友好的错误消息
+- **错误码**：使用标准的 HTTP 状态码
+
+### 5. 日志记录
+
+- **结构化日志**：使用 Pino 进行结构化日志记录
+- **日志级别**：合理使用不同的日志级别
+- **敏感信息**：避免记录敏感信息
+- **性能考虑**：日志记录不应影响应用性能
+
+### 6. 测试编写
+
+- **测试覆盖**：为关键功能编写测试
+- **测试隔离**：每个测试应该独立运行
+- **测试数据**：使用测试专用的数据库配置
+- **断言清晰**：使用清晰的断言消息
+
+## API 文档
+
+### 文档端点
+
+- `GET /doc`：OpenAPI 规范文档（JSON 格式）
+- `GET /reference`：Scalar API 文档界面（交互式文档）
+
+### 文档生成
+
+- 使用 `@hono/zod-openapi` 自动生成 OpenAPI 规范
+- 路由定义中的 Zod 模式自动转换为 OpenAPI 模式
+- 支持交互式 API 文档浏览和测试
+
+## 部署配置
+
+### 本地开发
+
+- 使用 `@hono/node-server` 作为运行时
+- 使用 `tsx watch` 进行热重载
+- 使用 SQLite 或 Turso 数据库
+
+### 生产环境
+
+- 构建 TypeScript 代码：`pnpm build`
+- 运行编译后的代码：`pnpm start`
+- 配置生产环境变量
+- 使用 Turso 云数据库
+- 配置反向代理（如 Nginx）
+
+## 项目扩展指南
+
+### 添加新路由模块
+
+1. 在 `src/routes/` 下创建新目录（如 `users/`）
+2. 创建 `users.routes.ts` 定义路由
+3. 创建 `users.handlers.ts` 实现处理逻辑
+4. 创建 `users.index.ts` 注册路由
+5. 在 `src/app.ts` 中导入并注册路由
+6. 创建 `users.test.ts` 编写测试
+
+### 添加新中间件
+
+1. 在 `src/middlewares/` 下创建中间件文件
+2. 导出中间件函数
+3. 在 `src/lib/create-app.ts` 中使用中间件
+
+### 添加数据库表
+
+1. 在 `src/db/schema.ts` 中定义表结构
+2. 运行 `pnpm drizzle-kit generate` 生成迁移
+3. 运行 `pnpm drizzle-kit push` 应用迁移
+
+## 代码风格
+
+- **缩进**：使用 2 个空格
+- **引号**：使用单引号（字符串）和双引号（JSON）
+- **分号**：不使用分号（除非必需）
+- **尾逗号**：多行结构使用尾逗号
+- **导入顺序**：外部依赖 → 内部模块 → 类型导入
