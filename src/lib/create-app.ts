@@ -6,6 +6,7 @@ import { notFound, onError, serveEmojiFavicon } from "stoker/middlewares";
 import { defaultHook } from "stoker/openapi";
 
 import { pinoLogger } from "@/middlewares/pino-logger";
+import { corsMiddleware } from "@/middlewares/cors";
 
 import type { AppBindings, AppOpenAPI } from "./types";
 
@@ -19,6 +20,7 @@ export function createRouter() {
 export default function createApp() {
   const app = createRouter();
   app.use(requestId())
+    .use(corsMiddleware)
     .use(serveEmojiFavicon("📝"))
     .use(pinoLogger());
 

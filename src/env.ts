@@ -33,6 +33,7 @@ const EnvSchema = z.object({
   JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
   JWT_EXPIRES_IN: z.string().default("1h"),
   JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
+  ADMIN_KEY: z.string().optional(), // 管理密钥，用于创建管理员账户
 }).superRefine((input, ctx) => {
   if (input.NODE_ENV === "production" && !input.DATABASE_AUTH_TOKEN) {
     ctx.addIssue({
