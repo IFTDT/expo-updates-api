@@ -1,4 +1,4 @@
-import { and, eq, ilike, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 
 import db from "@/db";
@@ -31,7 +31,11 @@ export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
   const conditions = [eq(userGroups.appId, appId)];
 
   if (query.search) {
-    conditions.push(ilike(userGroups.name, `%${query.search}%`));
+    // SQLite/Turso 不支持 ILIKE，使用 lower() 函数实现不区分大小写搜索
+    const searchPattern = `%${query.search.toLowerCase()}%`;
+    conditions.push(
+      sql`LOWER(${userGroups.name}) LIKE ${searchPattern}`,
+    );
   }
 
   const where = and(...conditions);

@@ -1,4 +1,4 @@
-import { and, count, desc, eq, ilike, inArray, or } from "drizzle-orm";
+import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 
 import type { AppRouteHandler } from "@/lib/types";
@@ -40,10 +40,12 @@ export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
   }
 
   if (query.search) {
+    // SQLite/Turso 不支持 ILIKE，使用 lower() 函数实现不区分大小写搜索
+    const searchPattern = `%${query.search.toLowerCase()}%`;
     conditions.push(
       or(
-        ilike(users.name, `%${query.search}%`),
-        ilike(users.email, `%${query.search}%`),
+        sql`LOWER(${users.name}) LIKE ${searchPattern}`,
+        sql`LOWER(${users.email}) LIKE ${searchPattern}`,
       )!,
     );
   }
