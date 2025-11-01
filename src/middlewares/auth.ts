@@ -1,9 +1,9 @@
 import { createMiddleware } from "hono/factory";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 
-import { extractToken, verifyToken } from "@/lib/auth";
-
 import type { AppBindings } from "@/lib/types";
+
+import { extractToken, verifyToken } from "@/lib/auth";
 
 export interface AuthPayload {
   userId: string;
@@ -96,4 +96,3 @@ export const appManagerMiddleware = createMiddleware<AppBindings>(
     await next();
   },
 );
-

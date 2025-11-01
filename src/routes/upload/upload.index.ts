@@ -6,7 +6,8 @@ import * as routes from "./upload.routes";
 
 const router = createRouter();
 
-router.use("/api/upload*", authMiddleware);
+router.use("/api/upload", authMiddleware);
+router.use("/api/upload/*", authMiddleware);
 router.openapi(routes.upload, handlers.upload);
 router.openapi(routes.getProgress, handlers.getProgress);
 

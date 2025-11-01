@@ -1,16 +1,17 @@
 import { and, count, desc, eq, ilike, inArray, or } from "drizzle-orm";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 
-import db from "@/db";
-import { users, userApps } from "@/db/schema";
-import { hashPassword } from "@/lib/auth";
-import { paginationResponse, errorResponse, successResponse } from "@/lib/response";
-import { adminMiddleware } from "@/middlewares/auth";
 import type { AppRouteHandler } from "@/lib/types";
+
+import db from "@/db";
+import { userApps, users } from "@/db/schema";
+import { hashPassword } from "@/lib/auth";
+import { errorResponse, paginationResponse, successResponse } from "@/lib/response";
+import { adminMiddleware } from "@/middlewares/auth";
 
 import type { CreateRoute, ListRoute, RemoveRoute, ResetPasswordRoute, ToggleStatusRoute, UpdateRoute } from "./platform-users.routes";
 
-export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
+export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
   const query = c.req.valid("query");
   const page = query.page || 1;
   const limit = query.limit || 20;
@@ -81,9 +82,9 @@ export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
   });
 
   return paginationResponse(c, formattedItems, page, limit, total);
-};
+}
 
-export const create = async (c: Parameters<AppRouteHandler<CreateRoute>>[0]) => {
+export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
   const data = c.req.valid("json");
   const userPayload = c.get("user");
 
@@ -126,7 +127,7 @@ export const create = async (c: Parameters<AppRouteHandler<CreateRoute>>[0]) => 
 
   // 关联应用
   if (data.appIds.length > 0) {
-    const userAppRecords = data.appIds.map((appId) => ({
+    const userAppRecords = data.appIds.map(appId => ({
       userId: newUser.id,
       appId,
     }));
@@ -146,9 +147,9 @@ export const create = async (c: Parameters<AppRouteHandler<CreateRoute>>[0]) => 
     undefined,
     HttpStatusCodes.CREATED,
   );
-};
+}
 
-export const update = async (c: Parameters<AppRouteHandler<UpdateRoute>>[0]) => {
+export async function update(c: Parameters<AppRouteHandler<UpdateRoute>>[0]) {
   const { id } = c.req.valid("param");
   const data = c.req.valid("json");
   const userPayload = c.get("user");
@@ -180,9 +181,12 @@ export const update = async (c: Parameters<AppRouteHandler<UpdateRoute>>[0]) => 
 
   // 更新用户信息
   const updateData: Partial<typeof users.$inferInsert> = {};
-  if (data.name) updateData.name = data.name;
-  if (data.role) updateData.role = data.role;
-  if (data.status) updateData.status = data.status;
+  if (data.name)
+    updateData.name = data.name;
+  if (data.role)
+    updateData.role = data.role;
+  if (data.status)
+    updateData.status = data.status;
 
   if (Object.keys(updateData).length > 0) {
     await db.update(users)
@@ -198,7 +202,7 @@ export const update = async (c: Parameters<AppRouteHandler<UpdateRoute>>[0]) => 
 
     // 添加新关联
     if (data.appIds.length > 0) {
-      const userAppRecords = data.appIds.map((appId) => ({
+      const userAppRecords = data.appIds.map(appId => ({
         userId: id,
         appId,
       }));
@@ -217,9 +221,9 @@ export const update = async (c: Parameters<AppRouteHandler<UpdateRoute>>[0]) => 
     name: updatedUser!.name,
     updatedAt: updatedUser!.updatedAt,
   });
-};
+}
 
-export const remove = async (c: Parameters<AppRouteHandler<RemoveRoute>>[0]) => {
+export async function remove(c: Parameters<AppRouteHandler<RemoveRoute>>[0]) {
   const { id } = c.req.valid("param");
   const userPayload = c.get("user");
 
@@ -264,9 +268,9 @@ export const remove = async (c: Parameters<AppRouteHandler<RemoveRoute>>[0]) => 
     .where(eq(users.id, id));
 
   return successResponse(c, null, "用户删除成功");
-};
+}
 
-export const resetPassword = async (c: Parameters<AppRouteHandler<ResetPasswordRoute>>[0]) => {
+export async function resetPassword(c: Parameters<AppRouteHandler<ResetPasswordRoute>>[0]) {
   const { id } = c.req.valid("param");
   const data = c.req.valid("json");
   const userPayload = c.get("user");
@@ -305,9 +309,9 @@ export const resetPassword = async (c: Parameters<AppRouteHandler<ResetPasswordR
     .where(eq(users.id, id));
 
   return successResponse(c, null, "密码重置成功");
-};
+}
 
-export const toggleStatus = async (c: Parameters<AppRouteHandler<ToggleStatusRoute>>[0]) => {
+export async function toggleStatus(c: Parameters<AppRouteHandler<ToggleStatusRoute>>[0]) {
   const { id } = c.req.valid("param");
   const data = c.req.valid("json");
   const userPayload = c.get("user");
@@ -357,5 +361,4 @@ export const toggleStatus = async (c: Parameters<AppRouteHandler<ToggleStatusRou
     id,
     status: data.status,
   });
-};
-
+}

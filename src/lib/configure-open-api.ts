@@ -11,6 +11,16 @@ export default function configureOpenAPI(app: AppOpenAPI) {
       version: packageJSON.version,
       title: "Expo update API",
     },
+    components: {
+      securitySchemes: {
+        Bearer: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+          description: "JWT Bearer Token认证",
+        },
+      },
+    },
   });
 
   app.get(

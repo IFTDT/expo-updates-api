@@ -26,7 +26,7 @@ git 提交模板<type>(<scope>): <subject>，具体要求如下：
 - chore: 构建过程或辅助工具的变动
 - revert: 回退
 - build: 打包
-3. 若 subject 中描述超过两种要点，请使用要点列表描述详情，每个要点使用-符号开头，多个换行，参考如下样例：
+3. 若 subject 中描述超过两种要点，请使用要点列表描述详情，每个要点使用-符号开头，多个换行，参考如下样例，注意我个示例是英文，你需要使用中文：
 ```
 feat(web): implement email verification workflow
 

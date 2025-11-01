@@ -6,7 +6,8 @@ import * as routes from "./app-users.routes";
 
 const router = createRouter();
 
-router.use("/api/apps/*/users*", authMiddleware);
+router.use("/api/apps/*/users", authMiddleware);
+router.use("/api/apps/*/users/*", authMiddleware);
 router.openapi(routes.list, handlers.list);
 router.openapi(routes.getOne, handlers.getOne);
 router.openapi(routes.updateVersion, handlers.updateVersion);

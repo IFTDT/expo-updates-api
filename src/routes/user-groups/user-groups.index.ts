@@ -6,7 +6,8 @@ import * as routes from "./user-groups.routes";
 
 const router = createRouter();
 
-router.use("/api/apps/*/user-groups*", authMiddleware);
+router.use("/api/apps/*/user-groups", authMiddleware);
+router.use("/api/apps/*/user-groups/*", authMiddleware);
 router.openapi(routes.list, handlers.list);
 router.openapi(routes.getOne, handlers.getOne);
 router.openapi(routes.create, handlers.create);
