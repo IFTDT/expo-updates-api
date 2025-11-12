@@ -33,3 +33,7 @@ test.db
 dist
 
 .dev.vars
+
+code-signing-keys
+
+uploads

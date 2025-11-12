@@ -1,19 +1,17 @@
-import fs from 'node:fs/promises'
-import path from 'node:path'
-import mime from 'mime'
-import FormData from 'form-data'
-import { eq, and } from 'drizzle-orm'
+import { and, eq } from "drizzle-orm";
+import FormData from "form-data";
+import mime from "mime";
+import fs from "node:fs/promises";
+import path from "node:path";
 
-import db from '@/db'
-import { apps, appUsers } from '@/db/schema'
-import type { AppRouteHandler } from '@/lib/types'
+import type { AppRouteHandler } from "@/lib/types";
 
-import type {
-  manifestRoute,
-  assetsRoute,
-} from './expo-updates.routes'
+import db from "@/db";
+import { apps, appUsers } from "@/db/schema";
 import {
+  checkRollbackExists,
   convertSHA256HashToUUID,
+  convertToDictionaryItemsRepresentation,
   createNoUpdateDirective,
   createRollBackDirectiveAsync,
   getAssetMetadataAsync,
@@ -21,79 +19,82 @@ import {
   getLatestUpdateBundlePathForRuntimeVersionAsync,
   getMetadataAsync,
   getPrivateKeyAsync,
-  signRSASHA256,
   serializeSignature,
-  convertToDictionaryItemsRepresentation,
-  checkRollbackExists,
-} from '@/lib/expo-updates-helpers'
+  signRSASHA256,
+} from "@/lib/expo-updates-helpers";
+
+import type {
+  assetsRoute,
+  manifestRoute,
+} from "./expo-updates.routes";
 
 /**
  * Manifest 处理函数
  */
 export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (c) => {
   // 只支持 GET 请求
-  if (c.req.method !== 'GET') {
-    return c.json({ success: false, error: { code: 'METHOD_NOT_ALLOWED', message: 'Expected GET.' } }, 405)
+  if (c.req.method !== "GET") {
+    return c.json({ success: false, error: { code: "METHOD_NOT_ALLOWED", message: "Expected GET." } }, 405);
   }
 
   // 提取协议版本（默认 0）
-  const protocolVersion = parseInt(c.req.header('expo-protocol-version') || '0', 10)
+  const protocolVersion = Number.parseInt(c.req.header("expo-protocol-version") || "0", 10);
 
   // 提取并验证平台
-  const platform = c.req.header('expo-platform') || c.req.query('platform')
-  if (platform !== 'ios' && platform !== 'android') {
+  const platform = c.req.header("expo-platform") || c.req.query("platform");
+  if (platform !== "ios" && platform !== "android") {
     return c.json({
       success: false,
       error: {
-        code: 'INVALID_PLATFORM',
-        message: 'Unsupported platform. Expected either ios or android.',
+        code: "INVALID_PLATFORM",
+        message: "Unsupported platform. Expected either ios or android.",
       },
-    }, 400)
+    }, 400);
   }
 
   // 提取并验证运行时版本
-  const runtimeVersion = c.req.header('expo-runtime-version') || c.req.query('runtime-version')
-  if (!runtimeVersion || typeof runtimeVersion !== 'string') {
+  const runtimeVersion = c.req.header("expo-runtime-version") || c.req.query("runtime-version");
+  if (!runtimeVersion || typeof runtimeVersion !== "string") {
     return c.json({
       success: false,
       error: {
-        code: 'MISSING_RUNTIME_VERSION',
-        message: 'No runtimeVersion provided.',
+        code: "MISSING_RUNTIME_VERSION",
+        message: "No runtimeVersion provided.",
       },
-    }, 400)
+    }, 400);
   }
 
   // 提取应用包名和设备/用户信息
-  const appId = c.req.header('x-app-id') || c.req.query('app-id')
-  const deviceId = c.req.header('x-device-id') || c.req.query('device-id')
-  const userId = c.req.header('x-user-id') || c.req.query('user-id')
+  const appId = c.req.header("x-app-id") || c.req.query("app-id");
+  const deviceId = c.req.header("x-device-id") || c.req.query("device-id");
+  const userId = c.req.header("x-user-id") || c.req.query("user-id");
 
   // 如果提供了 appId，验证应用是否存在
-  let app: typeof apps.$inferSelect | null = null
+  let app: typeof apps.$inferSelect | null = null;
   if (appId) {
     app = await db.query.apps.findFirst({
       where: eq(apps.appId, appId),
-    })
+    });
 
     if (!app) {
       return c.json({
         success: false,
         error: {
-          code: 'APP_NOT_FOUND',
+          code: "APP_NOT_FOUND",
           message: `App with id ${appId} not found.`,
         },
-      }, 404)
+      }, 404);
     }
 
     // 如果应用已停用，返回错误
-    if (app.status !== 'active') {
+    if (app.status !== "active") {
       return c.json({
         success: false,
         error: {
-          code: 'APP_INACTIVE',
+          code: "APP_INACTIVE",
           message: `App ${appId} is inactive.`,
         },
-      }, 403)
+      }, 403);
     }
 
     // 如果提供了 deviceId，记录或更新设备信息
@@ -103,7 +104,7 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (c) 
           eq(appUsers.appId, app.id),
           eq(appUsers.deviceId, deviceId),
         ),
-      })
+      });
 
       if (existingAppUser) {
         // 更新设备信息
@@ -112,10 +113,10 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (c) 
             currentVersion: runtimeVersion,
             lastUpdateAt: new Date(),
             userId: userId || existingAppUser.userId,
-            status: 'online',
+            status: "online",
             updatedAt: new Date(),
           })
-          .where(eq(appUsers.id, existingAppUser.id))
+          .where(eq(appUsers.id, existingAppUser.id));
       }
       else {
         // 创建新设备记录
@@ -125,57 +126,57 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (c) 
           userId: userId || null,
           currentVersion: runtimeVersion,
           lastUpdateAt: new Date(),
-          status: 'online',
-        })
+          status: "online",
+        });
       }
     }
   }
 
   // 查找最新更新包（如果提供了 appId，使用 appId 查找）
-  let updateBundlePath: string
+  let updateBundlePath: string;
   try {
     updateBundlePath = await getLatestUpdateBundlePathForRuntimeVersionAsync(
       runtimeVersion,
-      'updates',
+      "uploads",
       appId || undefined,
-    )
+    );
   }
   catch (error: any) {
     return c.json({
       success: false,
       error: {
-        code: 'UPDATE_NOT_FOUND',
+        code: "UPDATE_NOT_FOUND",
         message: error.message,
       },
-    }, 404)
+    }, 404);
   }
 
   try {
     // 读取元数据
-    const { metadataJson, createdAt, id } = await getMetadataAsync(updateBundlePath)
-    const currentUpdateId = convertSHA256HashToUUID(id)
+    const { metadataJson, createdAt, id } = await getMetadataAsync(updateBundlePath);
+    const currentUpdateId = convertSHA256HashToUUID(id);
 
     // Protocol version 1 特有功能：检查 rollback 和 no update available
-    const clientCurrentUpdateId = c.req.header('expo-current-update-id')
-    const embeddedUpdateId = c.req.header('expo-embedded-update-id')
+    const clientCurrentUpdateId = c.req.header("expo-current-update-id");
+    const embeddedUpdateId = c.req.header("expo-embedded-update-id");
 
     if (protocolVersion === 1) {
       // 检查是否存在 rollback 标记
-      const hasRollback = await checkRollbackExists(updateBundlePath)
+      const hasRollback = await checkRollbackExists(updateBundlePath);
       if (hasRollback) {
         if (embeddedUpdateId && clientCurrentUpdateId === embeddedUpdateId) {
           // 客户端已经在使用嵌入版本，不需要回滚
           // 返回 noUpdateAvailable
-          return await putNoUpdateAvailableInResponseAsync(c, protocolVersion)
+          return await putNoUpdateAvailableInResponseAsync(c, protocolVersion);
         }
 
         // 返回 rollback 指令
-        return await putRollBackInResponseAsync(c, updateBundlePath, protocolVersion)
+        return await putRollBackInResponseAsync(c, updateBundlePath, protocolVersion);
       }
 
       // 检查是否已经是当前更新（no update available）
       if (clientCurrentUpdateId === currentUpdateId) {
-        return await putNoUpdateAvailableInResponseAsync(c, protocolVersion)
+        return await putNoUpdateAvailableInResponseAsync(c, protocolVersion);
       }
     }
     else if (protocolVersion === 0 && clientCurrentUpdateId === currentUpdateId) {
@@ -185,7 +186,7 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (c) 
     }
 
     // 构建 manifest
-    const platformSpecificMetadata = metadataJson.fileMetadata[platform]
+    const platformSpecificMetadata = metadataJson.fileMetadata[platform];
     const manifest = {
       id: currentUpdateId,
       createdAt,
@@ -212,61 +213,61 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (c) 
       }),
       metadata: {},
       extra: { expoClient: await getExpoConfigAsync(updateBundlePath) },
-    }
+    };
 
     // 可选代码签名
-    let signature = null
-    if (c.req.header('expo-expect-signature')) {
-      const privateKey = await getPrivateKeyAsync()
+    let signature = null;
+    if (c.req.header("expo-expect-signature")) {
+      const privateKey = await getPrivateKeyAsync();
       if (!privateKey) {
         return c.json({
           success: false,
           error: {
-            code: 'SIGNING_ERROR',
-            message: 'Code signing requested but no key supplied when starting server.',
+            code: "SIGNING_ERROR",
+            message: "Code signing requested but no key supplied when starting server.",
           },
-        }, 400)
+        }, 400);
       }
 
-      const manifestString = JSON.stringify(manifest)
-      const hashSignature = signRSASHA256(manifestString, privateKey)
+      const manifestString = JSON.stringify(manifest);
+      const hashSignature = signRSASHA256(manifestString, privateKey);
       const dictionary = convertToDictionaryItemsRepresentation({
         sig: hashSignature,
-        keyid: 'main',
-      })
-      signature = serializeSignature(dictionary)
+        keyid: "main",
+      });
+      signature = serializeSignature(dictionary);
     }
 
     // 返回 multipart 响应
-    const form = new FormData()
-    form.append('manifest', JSON.stringify(manifest), {
-      contentType: 'application/json',
+    const form = new FormData();
+    form.append("manifest", JSON.stringify(manifest), {
+      contentType: "application/json",
       header: {
-        'content-type': 'application/json; charset=utf-8',
-        ...(signature ? { 'expo-signature': signature } : {}),
+        "content-type": "application/json; charset=utf-8",
+        ...(signature ? { "expo-signature": signature } : {}),
       },
-    })
+    });
 
-    c.header('expo-protocol-version', protocolVersion.toString())
-    c.header('expo-sfv-version', '0')
-    c.header('cache-control', 'private, max-age=0')
-    c.header('content-type', `multipart/mixed; boundary=${form.getBoundary()}`)
+    c.header("expo-protocol-version", protocolVersion.toString());
+    c.header("expo-sfv-version", "0");
+    c.header("cache-control", "private, max-age=0");
+    c.header("content-type", `multipart/mixed; boundary=${form.getBoundary()}`);
 
     return new Response(form.getBuffer(), {
       headers: c.res.headers,
       status: 200,
-    })
+    });
   }
   catch (error: any) {
     return c.json({
       success: false,
       error: {
-        code: 'INTERNAL_ERROR',
+        code: "INTERNAL_ERROR",
         message: error.message,
       },
-    }, 500)
+    }, 500);
   }
-}
+};
 
 /**
  * 返回 rollback 指令
@@ -280,73 +281,73 @@ async function putRollBackInResponseAsync(
     return c.json({
       success: false,
       error: {
-        code: 'ROLLBACK_NOT_SUPPORTED',
-        message: 'Rollbacks not supported on protocol version 0',
+        code: "ROLLBACK_NOT_SUPPORTED",
+        message: "Rollbacks not supported on protocol version 0",
       },
-    }, 400)
+    }, 400);
   }
 
-  const embeddedUpdateId = c.req.header('expo-embedded-update-id')
+  const embeddedUpdateId = c.req.header("expo-embedded-update-id");
   if (!embeddedUpdateId) {
     return c.json({
       success: false,
       error: {
-        code: 'MISSING_EMBEDDED_UPDATE_ID',
-        message: 'Invalid Expo-Embedded-Update-ID request header specified.',
+        code: "MISSING_EMBEDDED_UPDATE_ID",
+        message: "Invalid Expo-Embedded-Update-ID request header specified.",
       },
-    }, 400)
+    }, 400);
   }
 
-  const currentUpdateId = c.req.header('expo-current-update-id')
+  const currentUpdateId = c.req.header("expo-current-update-id");
   if (currentUpdateId === embeddedUpdateId) {
     // 客户端已经在使用嵌入版本，返回 noUpdateAvailable
-    return await putNoUpdateAvailableInResponseAsync(c, protocolVersion)
+    return await putNoUpdateAvailableInResponseAsync(c, protocolVersion);
   }
 
-  const directive = await createRollBackDirectiveAsync(updateBundlePath)
+  const directive = await createRollBackDirectiveAsync(updateBundlePath);
 
   // 可选代码签名
-  let signature = null
-  if (c.req.header('expo-expect-signature')) {
-    const privateKey = await getPrivateKeyAsync()
+  let signature = null;
+  if (c.req.header("expo-expect-signature")) {
+    const privateKey = await getPrivateKeyAsync();
     if (!privateKey) {
       return c.json({
         success: false,
         error: {
-          code: 'SIGNING_ERROR',
-          message: 'Code signing requested but no key supplied when starting server.',
+          code: "SIGNING_ERROR",
+          message: "Code signing requested but no key supplied when starting server.",
         },
-      }, 400)
+      }, 400);
     }
 
-    const directiveString = JSON.stringify(directive)
-    const hashSignature = signRSASHA256(directiveString, privateKey)
+    const directiveString = JSON.stringify(directive);
+    const hashSignature = signRSASHA256(directiveString, privateKey);
     const dictionary = convertToDictionaryItemsRepresentation({
       sig: hashSignature,
-      keyid: 'main',
-    })
-    signature = serializeSignature(dictionary)
+      keyid: "main",
+    });
+    signature = serializeSignature(dictionary);
   }
 
   // 返回 multipart 响应
-  const form = new FormData()
-  form.append('directive', JSON.stringify(directive), {
-    contentType: 'application/json',
+  const form = new FormData();
+  form.append("directive", JSON.stringify(directive), {
+    contentType: "application/json",
     header: {
-      'content-type': 'application/json; charset=utf-8',
-      ...(signature ? { 'expo-signature': signature } : {}),
+      "content-type": "application/json; charset=utf-8",
+      ...(signature ? { "expo-signature": signature } : {}),
     },
-  })
+  });
 
-  c.header('expo-protocol-version', '1')
-  c.header('expo-sfv-version', '0')
-  c.header('cache-control', 'private, max-age=0')
-  c.header('content-type', `multipart/mixed; boundary=${form.getBoundary()}`)
+  c.header("expo-protocol-version", "1");
+  c.header("expo-sfv-version", "0");
+  c.header("cache-control", "private, max-age=0");
+  c.header("content-type", `multipart/mixed; boundary=${form.getBoundary()}`);
 
   return new Response(form.getBuffer(), {
     headers: c.res.headers,
     status: 200,
-  })
+  });
 }
 
 /**
@@ -362,238 +363,240 @@ async function putNoUpdateAvailableInResponseAsync(
     return c.json({
       success: false,
       error: {
-        code: 'NO_UPDATE_DIRECTIVE_NOT_SUPPORTED',
-        message: 'NoUpdateAvailable directive not available in protocol version 0',
+        code: "NO_UPDATE_DIRECTIVE_NOT_SUPPORTED",
+        message: "NoUpdateAvailable directive not available in protocol version 0",
       },
-    }, 400)
+    }, 400);
   }
 
-  const directive = createNoUpdateDirective()
+  const directive = createNoUpdateDirective();
 
   // 可选代码签名
-  let signature = null
-  if (c.req.header('expo-expect-signature')) {
-    const privateKey = await getPrivateKeyAsync()
+  let signature = null;
+  if (c.req.header("expo-expect-signature")) {
+    const privateKey = await getPrivateKeyAsync();
     if (!privateKey) {
       return c.json({
         success: false,
         error: {
-          code: 'SIGNING_ERROR',
-          message: 'Code signing requested but no key supplied when starting server.',
+          code: "SIGNING_ERROR",
+          message: "Code signing requested but no key supplied when starting server.",
         },
-      }, 400)
+      }, 400);
     }
 
-    const directiveString = JSON.stringify(directive)
-    const hashSignature = signRSASHA256(directiveString, privateKey)
+    const directiveString = JSON.stringify(directive);
+    const hashSignature = signRSASHA256(directiveString, privateKey);
     const dictionary = convertToDictionaryItemsRepresentation({
       sig: hashSignature,
-      keyid: 'main',
-    })
-    signature = serializeSignature(dictionary)
+      keyid: "main",
+    });
+    signature = serializeSignature(dictionary);
   }
 
   // 返回 multipart 响应
-  const form = new FormData()
-  form.append('directive', JSON.stringify(directive), {
-    contentType: 'application/json',
+  const form = new FormData();
+  form.append("directive", JSON.stringify(directive), {
+    contentType: "application/json",
     header: {
-      'content-type': 'application/json; charset=utf-8',
-      ...(signature ? { 'expo-signature': signature } : {}),
+      "content-type": "application/json; charset=utf-8",
+      ...(signature ? { "expo-signature": signature } : {}),
     },
-  })
+  });
 
-  c.header('expo-protocol-version', '1')
-  c.header('expo-sfv-version', '0')
-  c.header('cache-control', 'private, max-age=0')
-  c.header('content-type', `multipart/mixed; boundary=${form.getBoundary()}`)
+  c.header("expo-protocol-version", "1");
+  c.header("expo-sfv-version", "0");
+  c.header("cache-control", "private, max-age=0");
+  c.header("content-type", `multipart/mixed; boundary=${form.getBoundary()}`);
 
   return new Response(form.getBuffer(), {
     headers: c.res.headers,
     status: 200,
-  })
+  });
 }
 
 /**
  * Assets 处理函数
  */
 export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
-  const query = c.req.valid('query')
-  const assetName = query.asset
-  const runtimeVersion = query.runtimeVersion
-  const platform = query.platform
+  const query = c.req.valid("query");
+  const assetName = query.asset;
+  const runtimeVersion = query.runtimeVersion;
+  const platform = query.platform;
 
   // 验证资源名称
-  if (!assetName || typeof assetName !== 'string') {
+  if (!assetName || typeof assetName !== "string") {
     return c.json({
       success: false,
       error: {
-        code: 'INVALID_ASSET_NAME',
-        message: 'No asset name provided.',
+        code: "INVALID_ASSET_NAME",
+        message: "No asset name provided.",
       },
-    }, 400)
+    }, 400);
   }
 
   // 验证平台
-  if (platform !== 'ios' && platform !== 'android') {
+  if (platform !== "ios" && platform !== "android") {
     return c.json({
       success: false,
       error: {
-        code: 'INVALID_PLATFORM',
-        message: 'No platform provided. Expected "ios" or "android".',
+        code: "INVALID_PLATFORM",
+        message: "No platform provided. Expected \"ios\" or \"android\".",
       },
-    }, 400)
+    }, 400);
   }
 
   // 验证运行时版本
-  if (!runtimeVersion || typeof runtimeVersion !== 'string') {
+  if (!runtimeVersion || typeof runtimeVersion !== "string") {
     return c.json({
       success: false,
       error: {
-        code: 'MISSING_RUNTIME_VERSION',
-        message: 'No runtimeVersion provided.',
+        code: "MISSING_RUNTIME_VERSION",
+        message: "No runtimeVersion provided.",
       },
-    }, 400)
+    }, 400);
   }
 
   // 提取应用包名（从 header 或 query）
-  const appId = c.req.header('x-app-id') || query['app-id']
+  const appId = c.req.header("x-app-id") || query["app-id"];
 
   // 如果提供了 appId，验证应用是否存在
   if (appId) {
     const app = await db.query.apps.findFirst({
       where: eq(apps.appId, appId),
-    })
+    });
 
     if (!app) {
       return c.json({
         success: false,
         error: {
-          code: 'APP_NOT_FOUND',
+          code: "APP_NOT_FOUND",
           message: `App with id ${appId} not found.`,
         },
-      }, 404)
+      }, 404);
     }
 
-    if (app.status !== 'active') {
+    if (app.status !== "active") {
       return c.json({
         success: false,
         error: {
-          code: 'APP_INACTIVE',
+          code: "APP_INACTIVE",
           message: `App ${appId} is inactive.`,
         },
-      }, 403)
+      }, 403);
     }
   }
 
   // 定位更新包（如果提供了 appId，使用 appId 查找）
-  let updateBundlePath: string
+  let updateBundlePath: string;
   try {
     updateBundlePath = await getLatestUpdateBundlePathForRuntimeVersionAsync(
       runtimeVersion,
-      'updates',
+      "uploads",
       appId || undefined,
-    )
+    );
   }
   catch (error: any) {
     return c.json({
       success: false,
       error: {
-        code: 'UPDATE_NOT_FOUND',
+        code: "UPDATE_NOT_FOUND",
         message: error.message,
       },
-    }, 404)
+    }, 404);
   }
+  console.log("updateBundlePath", updateBundlePath);
 
   // 加载元数据以确定资源类型
-  let metadataJson: any
+  let metadataJson: any;
   try {
-    const { metadataJson: meta } = await getMetadataAsync(updateBundlePath)
-    metadataJson = meta
+    const { metadataJson: meta } = await getMetadataAsync(updateBundlePath);
+    metadataJson = meta;
   }
   catch (error: any) {
     return c.json({
       success: false,
       error: {
-        code: 'METADATA_ERROR',
-        message: 'Failed to read metadata.',
+        code: "METADATA_ERROR",
+        message: "Failed to read metadata.",
       },
-    }, 500)
+    }, 500);
   }
 
   // 解析资源路径 - assetName 可能是相对路径或绝对路径
-  let assetPath: string
+  let assetPath: string;
   if (path.isAbsolute(assetName)) {
-    assetPath = assetName
+    assetPath = assetName;
   }
   else {
     // 如果是相对路径，尝试相对于更新包路径或工作目录
     if (assetName.startsWith(updateBundlePath)) {
-      assetPath = path.resolve(assetName)
+      assetPath = path.resolve(assetName);
     }
     else {
       // 尝试在更新包目录中查找
-      assetPath = path.join(updateBundlePath, assetName)
+      assetPath = path.join(updateBundlePath, assetName);
     }
   }
 
+  console.log("assetPath", assetPath);
+
   // 检查资源是否存在
   try {
-    await fs.access(assetPath, fs.constants.F_OK)
+    await fs.access(assetPath, fs.constants.F_OK);
   }
   catch {
     return c.json({
       success: false,
       error: {
-        code: 'ASSET_NOT_FOUND',
+        code: "ASSET_NOT_FOUND",
         message: `Asset "${assetName}" does not exist.`,
       },
-    }, 404)
+    }, 404);
   }
 
   // 确定资源类型
-  const relativePath = path.relative(updateBundlePath, assetPath)
+  const relativePath = path.relative(updateBundlePath, assetPath);
   const assetMetadata = metadataJson.fileMetadata[platform].assets.find(
     (asset: any) => asset.path === relativePath,
-  )
+  );
 
-  const isLaunchAsset = metadataJson.fileMetadata[platform].bundle === relativePath
+  const isLaunchAsset = metadataJson.fileMetadata[platform].bundle === relativePath;
 
   // 确定 MIME 类型
-  let contentType: string
+  let contentType: string;
   if (isLaunchAsset) {
-    contentType = 'application/javascript'
+    contentType = "application/javascript";
   }
   else if (assetMetadata?.ext) {
-    const ext = assetMetadata.ext.startsWith('.') ? assetMetadata.ext : `.${assetMetadata.ext}`
-    const mimeType = mime.getType(ext)
-    contentType = mimeType || 'application/octet-stream'
+    const ext = assetMetadata.ext.startsWith(".") ? assetMetadata.ext : `.${assetMetadata.ext}`;
+    const mimeType = mime.getType(ext);
+    contentType = mimeType || "application/octet-stream";
   }
   else {
-    const ext = path.extname(assetPath)
-    const mimeType = mime.getType(ext)
-    contentType = mimeType || 'application/octet-stream'
+    const ext = path.extname(assetPath);
+    const mimeType = mime.getType(ext);
+    contentType = mimeType || "application/octet-stream";
   }
 
   // 提供服务资源
   try {
-    const asset = await fs.readFile(assetPath)
+    const asset = await fs.readFile(assetPath);
 
-    c.header('content-type', contentType)
+    c.header("content-type", contentType);
 
     return new Response(asset, {
       headers: c.res.headers,
       status: 200,
-    })
+    });
   }
   catch (error: any) {
     return c.json({
       success: false,
       error: {
-        code: 'FILE_READ_ERROR',
+        code: "FILE_READ_ERROR",
         message: error.message,
       },
-    }, 500)
+    }, 500);
   }
-}
-
+};
