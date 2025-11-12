@@ -126,6 +126,82 @@
 3. **数据库关系**：所有表之间的关系已正确定义，支持级联删除
 4. **索引优化**：为常用查询字段创建了索引，提升查询性能
 
+## ✅ Expo Updates 服务端接口实现
+
+### 已实现的接口
+
+#### ✅ Manifest API (`GET /api/expo-updates/manifest`)
+- **功能**：返回 Expo 应用的更新清单，包含资源元数据和启动资源
+- **支持的特性**：
+  - ✅ 支持 Protocol Version 0 和 1
+  - ✅ 支持 `noUpdateAvailable` 指令（Protocol Version 1）
+  - ✅ 支持 `rollBackToEmbedded` 指令（Protocol Version 1）
+  - ✅ 支持代码签名（RSA-SHA256）
+  - ✅ 返回 multipart/mixed 响应格式
+  - ✅ 自动检测客户端是否已有最新更新
+  - ✅ 自动检测是否存在 rollback 标记
+
+#### ✅ Assets API (`GET /api/expo-updates/assets`)
+- **功能**：返回单个资源文件（JavaScript bundle 或资源）
+- **支持的特性**：
+  - ✅ 自动识别资源类型（launch asset 或普通资源）
+  - ✅ 自动设置正确的 MIME 类型
+  - ✅ 支持相对路径和绝对路径
+  - ✅ 完整的参数验证
+
+### 实现细节
+
+#### Manifest Handler 逻辑流程
+1. **验证请求参数**：platform、runtimeVersion、protocolVersion
+2. **查找最新更新包**：根据 runtimeVersion 查找最新的更新目录
+3. **Protocol Version 1 特有功能**：
+   - 检查是否存在 rollback 标记
+   - 检查客户端是否已有最新更新（noUpdateAvailable）
+   - 检查是否需要回滚到嵌入版本（rollBackToEmbedded）
+4. **构建 Manifest**：包含 assets、launchAsset、metadata 等
+5. **代码签名**：如果请求包含 `expo-expect-signature` 头，则对 manifest 进行签名
+6. **返回响应**：multipart/mixed 格式，包含 manifest 或 directive
+
+#### Assets Handler 逻辑流程
+1. **验证请求参数**：asset、runtimeVersion、platform
+2. **定位更新包**：根据 runtimeVersion 查找更新目录
+3. **解析资源路径**：支持相对路径和绝对路径
+4. **确定资源类型**：通过 metadata.json 判断是 launch asset 还是普通资源
+5. **设置 MIME 类型**：根据文件扩展名和资源类型设置正确的 Content-Type
+6. **返回资源文件**：流式返回资源文件内容
+
+### 辅助函数
+
+- `checkRollbackExists()`: 检查是否存在 rollback 标记文件
+- `createNoUpdateDirective()`: 创建无更新可用指令
+- `createRollBackDirectiveAsync()`: 创建回滚指令
+- `getAssetMetadataAsync()`: 获取资源元数据
+- `getMetadataAsync()`: 获取更新包元数据
+- `getLatestUpdateBundlePathForRuntimeVersionAsync()`: 获取最新更新包路径
+- `signRSASHA256()`: RSA-SHA256 签名
+- `convertSHA256HashToUUID()`: SHA256 哈希转 UUID 格式
+
+### 环境变量配置
+
+- `UPDATES_BASE_URL`: Expo Updates 服务器基础 URL（可选，默认：http://localhost:9999）
+- `PRIVATE_KEY_PATH`: 代码签名私钥路径（可选，如果未设置则不进行代码签名）
+
+### 更新目录结构
+
+```
+updates/
+  {runtimeVersion}/
+    {timestamp}/
+      metadata.json          # 更新包元数据
+      expoConfig.json        # Expo 配置
+      rollback              # Rollback 标记文件（可选）
+      bundles/
+        ios-{hash}.js       # iOS bundle
+        android-{hash}.js   # Android bundle
+      assets/
+        {hash}              # 资源文件
+```
+
 ## 🚀 下一步建议
 
 1. **添加操作日志记录**：在关键操作（创建、更新、删除）中调用 `createOperationLog` 记录日志
@@ -133,6 +209,8 @@
 3. **添加速率限制**：实现 API 速率限制中间件
 4. **完善统计功能**：实现更详细的统计分析和时间线数据
 5. **添加单元测试**：为核心接口编写单元测试
+6. **Expo Updates 客户端集成**：创建 Expo Updates 客户端示例代码
+7. **更新包发布脚本**：创建自动化更新包发布脚本
 
 ## ✅ 代码质量
 

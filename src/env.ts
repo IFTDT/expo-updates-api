@@ -34,6 +34,8 @@ const EnvSchema = z.object({
   JWT_EXPIRES_IN: z.string().default("1h"),
   JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
   ADMIN_KEY: z.string().optional(), // 管理密钥，用于创建管理员账户
+  UPDATES_BASE_URL: z.string().optional(), // Expo Updates 服务器基础 URL
+  PRIVATE_KEY_PATH: z.string().optional(), // Expo Updates 代码签名私钥路径
 }).superRefine((input, ctx) => {
   if (input.NODE_ENV === "production" && !input.DATABASE_AUTH_TOKEN) {
     ctx.addIssue({

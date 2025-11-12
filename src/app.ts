@@ -13,6 +13,7 @@ import updateTasks from "@/routes/update-tasks/update-tasks.index";
 import upload from "@/routes/upload/upload.index";
 import userGroups from "@/routes/user-groups/user-groups.index";
 import versions from "@/routes/versions/versions.index";
+import expoUpdates from "@/routes/expo-updates/expo-updates.index";
 
 const app = createApp();
 
@@ -32,6 +33,7 @@ const routes = [
   platformUsers,
   upload,
   tasks,
+  expoUpdates,
 ] as const;
 
 routes.forEach((route) => {
