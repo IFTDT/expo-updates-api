@@ -151,6 +151,47 @@ export const create = createRoute({
   },
 });
 
+// ==================== 通过已存在文件创建版本 ====================
+export const createFromUrl = createRoute({
+  path: "/api/apps/{appId}/versions/by-url",
+  method: "post",
+  tags,
+  security: [{ Bearer: [] }],
+  request: {
+    params: AppIdParamsSchema,
+    body: jsonContentRequired(
+      z.object({
+        version: z.string().min(1, "版本号不能为空"),
+        name: z.string().min(1, "版本名称不能为空"),
+        description: z.string().optional(),
+        isMandatory: z.boolean().default(false),
+        fileUrl: z.string().url("文件URL格式不正确"),
+        fileSize: z.number().int().positive("文件大小必须大于0"),
+        checksum: z.string().min(1, "校验和不能为空"),
+        publishTime: z.enum(["now", "scheduled"]).default("now"),
+        scheduledAt: z.string().datetime().optional(),
+      }),
+      "通过已存在文件创建版本请求",
+    ),
+  },
+  responses: {
+    [HttpStatusCodes.CREATED]: jsonContent(
+      z.object({
+        success: z.literal(true),
+        data: z.object({
+          id: z.string(),
+          version: z.string(),
+          status: z.string(),
+          publishedAt: z.date().nullable().optional(),
+          taskId: z.string().optional(),
+        }),
+        message: z.string(),
+      }),
+      "创建成功",
+    ),
+  },
+});
+
 // ==================== 发布版本 ====================
 export const publish = createRoute({
   path: "/api/apps/{appId}/versions/{id}/publish",
@@ -242,6 +283,7 @@ export const remove = createRoute({
 export type ListRoute = typeof list;
 export type GetOneRoute = typeof getOne;
 export type CreateRoute = typeof create;
+export type CreateFromUrlRoute = typeof createFromUrl;
 export type PublishRoute = typeof publish;
 export type RollbackRoute = typeof rollback;
 export type RemoveRoute = typeof remove;

@@ -11,7 +11,7 @@ import db from "@/db";
 import { apps, appUsers, updateTasks, uploads, versions } from "@/db/schema";
 import { errorResponse, paginationResponse, successResponse } from "@/lib/response";
 
-import type { CreateRoute, GetOneRoute, ListRoute, PublishRoute, RemoveRoute, RollbackRoute } from "./versions.routes";
+import type { CreateFromUrlRoute, CreateRoute, GetOneRoute, ListRoute, PublishRoute, RemoveRoute, RollbackRoute } from "./versions.routes";
 
 export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
   const { appId } = c.req.valid("param");
@@ -445,6 +445,125 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
       status: newVersion.status,
       publishedAt: newVersion.publishedAt || undefined,
       uploadId: uploadRecord.id,
+      taskId,
+    },
+    "版本创建成功",
+    HttpStatusCodes.CREATED,
+  );
+}
+
+export async function createFromUrl(c: Parameters<AppRouteHandler<CreateFromUrlRoute>>[0]) {
+  const { appId } = c.req.valid("param");
+  const userPayload = c.get("user");
+
+  if (!userPayload) {
+    return errorResponse(
+      c,
+      "AUTH_REQUIRED",
+      "需要认证",
+      undefined,
+      HttpStatusCodes.UNAUTHORIZED,
+    );
+  }
+
+  const data = c.req.valid("json");
+
+  const app = await db.query.apps.findFirst({
+    where: eq(apps.id, appId),
+  });
+
+  if (!app) {
+    return errorResponse(
+      c,
+      "RESOURCE_NOT_FOUND",
+      "应用不存在",
+      { resource: "app", id: appId },
+      HttpStatusCodes.NOT_FOUND,
+    );
+  }
+
+  const existing = await db.query.versions.findFirst({
+    where: and(eq(versions.appId, appId), eq(versions.version, data.version)),
+  });
+
+  if (existing) {
+    return errorResponse(
+      c,
+      "VERSION_CONFLICT",
+      "版本号已存在",
+      { version: data.version },
+      HttpStatusCodes.CONFLICT,
+    );
+  }
+
+  const publishTime = data.publishTime || "now";
+
+  let scheduledAt: Date | null = null;
+  if (publishTime === "scheduled" && data.scheduledAt) {
+    const parsedDate = new Date(data.scheduledAt);
+    if (Number.isNaN(parsedDate.getTime())) {
+      return errorResponse(
+        c,
+        "VALIDATION_ERROR",
+        "定时发布时间格式不正确",
+        { field: "scheduledAt" },
+        HttpStatusCodes.BAD_REQUEST,
+      );
+    }
+    scheduledAt = parsedDate;
+  }
+
+  if (publishTime === "scheduled" && !scheduledAt) {
+    return errorResponse(
+      c,
+      "VALIDATION_ERROR",
+      "定时发布时间不能为空",
+      { field: "scheduledAt" },
+      HttpStatusCodes.BAD_REQUEST,
+    );
+  }
+
+  const publishedAt = publishTime === "now" ? new Date() : scheduledAt;
+  const status = publishedAt ? "published" : "draft";
+
+  const [newVersion] = await db.insert(versions).values({
+    appId,
+    version: data.version,
+    name: data.name,
+    description: data.description,
+    status,
+    fileUrl: data.fileUrl,
+    fileSize: data.fileSize,
+    checksum: data.checksum,
+    isMandatory: data.isMandatory ?? false,
+    publishedAt,
+    publishedBy: publishedAt ? userPayload.userId : undefined,
+  }).returning();
+
+  let taskId: string | undefined;
+  if (status === "published") {
+    const [task] = await db.insert(updateTasks).values({
+      appId,
+      versionId: newVersion.id,
+      type: "full",
+      status: "pending",
+      scheduledAt: publishTime === "scheduled" && scheduledAt ? scheduledAt : undefined,
+      createdBy: userPayload.userId,
+    }).returning();
+    taskId = task.id;
+  }
+
+  await db.update(apps)
+    .set({ currentVersion: data.version, updatedAt: new Date() })
+    .where(eq(apps.id, appId));
+
+  return successResponse(
+    c,
+    {
+      id: newVersion.id,
+      version: newVersion.version,
+      status: newVersion.status,
+      publishedAt: newVersion.publishedAt || undefined,
       taskId,
     },
     "版本创建成功",
