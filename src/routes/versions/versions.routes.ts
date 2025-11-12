@@ -1,6 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import * as HttpStatusCodes from "stoker/http-status-codes";
-import { jsonContent, jsonContentRequired } from "stoker/openapi/helpers";
+import { jsonContent } from "stoker/openapi/helpers";
 import { createErrorSchema } from "stoker/openapi/schemas";
 
 import { paginationQuerySchema, sortQuerySchema } from "@/lib/pagination";
@@ -108,20 +108,30 @@ export const create = createRoute({
   security: [{ Bearer: [] }],
   request: {
     params: AppIdParamsSchema,
-    body: jsonContentRequired(
-      z.object({
-        version: z.string().min(1, "版本号不能为空"),
-        name: z.string().min(1, "版本名称不能为空"),
-        description: z.string().optional(),
-        isMandatory: z.boolean().default(false),
-        fileUrl: z.string().url("文件URL格式不正确"),
-        fileSize: z.number().int().positive("文件大小必须大于0"),
-        checksum: z.string().min(1, "校验和不能为空"),
-        publishTime: z.enum(["now", "scheduled"]).default("now"),
-        scheduledAt: z.string().datetime().optional(),
-      }),
-      "创建版本请求",
-    ),
+    body: {
+      content: {
+        "multipart/form-data": {
+          schema: z.object({
+            version: z.string().min(1, "版本号不能为空"),
+            runtimeVersion: z.string().min(1, "Runtime 版本不能为空"),
+            name: z.string().min(1, "版本名称不能为空"),
+            description: z.string().optional(),
+            isMandatory: z.string().optional().openapi({
+              enum: ["true", "false"],
+              example: "false",
+              description: "是否为强制更新，true/false",
+            }),
+            publishTime: z.enum(["now", "scheduled"]).default("now"),
+            scheduledAt: z.string().datetime().optional(),
+            file: z.instanceof(File).openapi({
+              type: "string",
+              format: "binary",
+            }),
+          }),
+        },
+      },
+      required: true,
+    },
   },
   responses: {
     [HttpStatusCodes.CREATED]: jsonContent(
@@ -132,6 +142,7 @@ export const create = createRoute({
           version: z.string(),
           status: z.string(),
           publishedAt: z.date().nullable().optional(),
+          uploadId: z.string(),
           taskId: z.string().optional(),
         }),
         message: z.string(),

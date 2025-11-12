@@ -1,14 +1,19 @@
-import { and, count, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
+import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 
-import db from "@/db";
-import { apps, versions, users, appUsers, updateTasks } from "@/db/schema";
-import { paginationResponse, errorResponse, successResponse } from "@/lib/response";
 import type { AppRouteHandler } from "@/lib/types";
+
+import db from "@/db";
+import { apps, appUsers, updateTasks, uploads, versions } from "@/db/schema";
+import { errorResponse, paginationResponse, successResponse } from "@/lib/response";
 
 import type { CreateRoute, GetOneRoute, ListRoute, PublishRoute, RemoveRoute, RollbackRoute } from "./versions.routes";
 
-export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
+export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
   const { appId } = c.req.valid("param");
   const query = c.req.valid("query");
   const page = query.page || 1;
@@ -79,19 +84,21 @@ export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
       isMandatory: item.isMandatory,
       publishedAt: item.publishedAt || undefined,
       publishedBy: item.publishedBy || undefined,
-      publisher: item.publisher ? {
-        id: item.publisher.id,
-        name: item.publisher.name,
-      } : undefined,
+      publisher: item.publisher
+        ? {
+            id: item.publisher.id,
+            name: item.publisher.name,
+          }
+        : undefined,
       userCount: userCount.length,
       createdAt: item.createdAt,
     };
   }));
 
   return paginationResponse(c, formattedItems, page, limit, total);
-};
+}
 
-export const getOne = async (c: Parameters<AppRouteHandler<GetOneRoute>>[0]) => {
+export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
   const { appId, id } = c.req.valid("param");
 
   // 验证应用是否存在
@@ -150,18 +157,23 @@ export const getOne = async (c: Parameters<AppRouteHandler<GetOneRoute>>[0]) => 
     publishedAt: version.publishedAt || undefined,
     rolledBackAt: version.rolledBackAt || undefined,
     publishedBy: version.publishedBy || undefined,
-    publisher: version.publisher ? {
-      id: version.publisher.id,
-      name: version.publisher.name,
-    } : undefined,
+    publisher: version.publisher
+      ? {
+          id: version.publisher.id,
+          name: version.publisher.name,
+        }
+      : undefined,
     userCount: userCount.length,
     createdAt: version.createdAt,
   });
-};
+}
 
-export const create = async (c: Parameters<AppRouteHandler<CreateRoute>>[0]) => {
+const UPLOAD_DIR = "./uploads";
+
+const hasInvalidPathSegment = (value: string) => value.includes("..") || value.includes("/") || value.includes("\\");
+
+export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
   const { appId } = c.req.valid("param");
-  const data = c.req.valid("json");
   const userPayload = c.get("user");
 
   if (!userPayload) {
@@ -189,9 +201,125 @@ export const create = async (c: Parameters<AppRouteHandler<CreateRoute>>[0]) => 
     );
   }
 
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.parseBody();
+  }
+  catch (error) {
+    return errorResponse(
+      c,
+      "VALIDATION_ERROR",
+      "请求体解析失败",
+      { error: error instanceof Error ? error.message : "Unknown error" },
+      HttpStatusCodes.BAD_REQUEST,
+    );
+  }
+
+  const file = body.file as File | undefined;
+  const version = typeof body.version === "string" ? body.version.trim() : undefined;
+  const runtimeVersion = typeof body.runtimeVersion === "string" ? body.runtimeVersion.trim() : undefined;
+  const name = typeof body.name === "string" ? body.name.trim() : undefined;
+  const description = typeof body.description === "string" ? body.description : undefined;
+  const publishTimeRaw = typeof body.publishTime === "string" && body.publishTime.length > 0 ? body.publishTime : "now";
+  const scheduledAtRaw = typeof body.scheduledAt === "string" && body.scheduledAt.length > 0 ? body.scheduledAt : undefined;
+  const isMandatoryRaw = body.isMandatory;
+
+  if (!file) {
+    return errorResponse(
+      c,
+      "VALIDATION_ERROR",
+      "文件不能为空",
+      { field: "file" },
+      HttpStatusCodes.BAD_REQUEST,
+    );
+  }
+
+  if (!version) {
+    return errorResponse(
+      c,
+      "VALIDATION_ERROR",
+      "版本号不能为空",
+      { field: "version" },
+      HttpStatusCodes.BAD_REQUEST,
+    );
+  }
+
+  if (!runtimeVersion) {
+    return errorResponse(
+      c,
+      "VALIDATION_ERROR",
+      "Runtime 版本不能为空",
+      { field: "runtimeVersion" },
+      HttpStatusCodes.BAD_REQUEST,
+    );
+  }
+
+  if (hasInvalidPathSegment(runtimeVersion)) {
+    return errorResponse(
+      c,
+      "VALIDATION_ERROR",
+      "runtimeVersion 不能包含路径分隔符",
+      { field: "runtimeVersion" },
+      HttpStatusCodes.BAD_REQUEST,
+    );
+  }
+
+  if (!name) {
+    return errorResponse(
+      c,
+      "VALIDATION_ERROR",
+      "版本名称不能为空",
+      { field: "name" },
+      HttpStatusCodes.BAD_REQUEST,
+    );
+  }
+
+  const publishTime = publishTimeRaw === "scheduled" ? "scheduled" : "now";
+
+  let scheduledAt: Date | null = null;
+  if (publishTime === "scheduled") {
+    if (!scheduledAtRaw) {
+      return errorResponse(
+        c,
+        "VALIDATION_ERROR",
+        "定时发布时间不能为空",
+        { field: "scheduledAt" },
+        HttpStatusCodes.BAD_REQUEST,
+      );
+    }
+    const parsedDate = new Date(scheduledAtRaw);
+    if (Number.isNaN(parsedDate.getTime())) {
+      return errorResponse(
+        c,
+        "VALIDATION_ERROR",
+        "定时发布时间格式不正确",
+        { field: "scheduledAt" },
+        HttpStatusCodes.BAD_REQUEST,
+      );
+    }
+    scheduledAt = parsedDate;
+  }
+  else if (scheduledAtRaw) {
+    const parsedDate = new Date(scheduledAtRaw);
+    if (Number.isNaN(parsedDate.getTime())) {
+      return errorResponse(
+        c,
+        "VALIDATION_ERROR",
+        "定时发布时间格式不正确",
+        { field: "scheduledAt" },
+        HttpStatusCodes.BAD_REQUEST,
+      );
+    }
+    scheduledAt = parsedDate;
+  }
+
+  const isMandatory = typeof isMandatoryRaw === "string"
+    ? isMandatoryRaw === "true"
+    : Boolean(isMandatoryRaw);
+
   // 检查版本号是否已存在
   const existing = await db.query.versions.findFirst({
-    where: and(eq(versions.appId, appId), eq(versions.version, data.version)),
+    where: and(eq(versions.appId, appId), eq(versions.version, version)),
   });
 
   if (existing) {
@@ -199,25 +327,93 @@ export const create = async (c: Parameters<AppRouteHandler<CreateRoute>>[0]) => 
       c,
       "VERSION_CONFLICT",
       "版本号已存在",
-      { version: data.version },
+      { version },
       HttpStatusCodes.CONFLICT,
     );
   }
 
+  const allowedExtensions = [".tar.gz", ".zip", ".tgz"];
+  const originalFileName = file.name || "bundle";
+  const lastDotIndex = originalFileName.lastIndexOf(".");
+  const extension = lastDotIndex !== -1 ? originalFileName.slice(lastDotIndex).toLowerCase() : "";
+
+  if (!allowedExtensions.includes(extension)) {
+    return errorResponse(
+      c,
+      "VALIDATION_ERROR",
+      "不支持的文件格式，仅支持 .tar.gz, .zip, .tgz",
+      { field: "file" },
+      HttpStatusCodes.BAD_REQUEST,
+    );
+  }
+
+  const maxSize = 100 * 1024 * 1024;
+  if (file.size > maxSize) {
+    return errorResponse(
+      c,
+      "VALIDATION_ERROR",
+      "文件大小不能超过100MB",
+      { field: "file" },
+      HttpStatusCodes.BAD_REQUEST,
+    );
+  }
+
+  const arrayBuffer = await file.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
+  const hash = createHash("sha256");
+  hash.update(buffer);
+  const checksum = `sha256:${hash.digest("hex")}`;
+
+  const sanitizedVersionSegment = version.replace(/\./g, "") || version;
+  if (hasInvalidPathSegment(sanitizedVersionSegment)) {
+    return errorResponse(
+      c,
+      "VALIDATION_ERROR",
+      "版本号不能包含路径分隔符",
+      { field: "version" },
+      HttpStatusCodes.BAD_REQUEST,
+    );
+  }
+
+  const timestamp = Date.now().toString();
+  const safeFileName = originalFileName.replace(/[^\w.-]/g, "_");
+  const storageDir = path.join(UPLOAD_DIR, appId, runtimeVersion, sanitizedVersionSegment, timestamp);
+
+  await mkdir(storageDir, { recursive: true });
+
+  const filePath = path.join(storageDir, safeFileName);
+  await writeFile(filePath, buffer);
+
+  const fileUrl = `/${path.posix.join("uploads", appId, runtimeVersion, sanitizedVersionSegment, timestamp, safeFileName)}`;
+
+  // 创建上传记录
+  const [uploadRecord] = await db.insert(uploads).values({
+    appId,
+    fileUrl,
+    fileSize: file.size,
+    checksum,
+    status: "completed",
+    progress: 100,
+    uploadedBytes: file.size,
+    totalBytes: file.size,
+    uploadedBy: userPayload.userId,
+  }).returning();
+
   // 创建版本
-  const publishedAt = data.publishTime === "now" ? new Date() : (data.scheduledAt ? new Date(data.scheduledAt) : null);
+  const publishedAt = publishTime === "now" ? new Date() : scheduledAt;
   const status = publishedAt ? "published" : "draft";
 
   const [newVersion] = await db.insert(versions).values({
     appId,
-    version: data.version,
-    name: data.name,
-    description: data.description,
+    version,
+    name,
+    description,
     status,
-    fileUrl: data.fileUrl,
-    fileSize: data.fileSize,
-    checksum: data.checksum,
-    isMandatory: data.isMandatory,
+    fileUrl,
+    fileSize: file.size,
+    checksum,
+    isMandatory,
     publishedAt,
     publishedBy: publishedAt ? userPayload.userId : undefined,
   }).returning();
@@ -230,6 +426,7 @@ export const create = async (c: Parameters<AppRouteHandler<CreateRoute>>[0]) => 
       versionId: newVersion.id,
       type: "full",
       status: "pending",
+      scheduledAt: publishTime === "scheduled" && scheduledAt ? scheduledAt : undefined,
       createdBy: userPayload.userId,
     }).returning();
     taskId = task.id;
@@ -237,7 +434,7 @@ export const create = async (c: Parameters<AppRouteHandler<CreateRoute>>[0]) => 
 
   // 更新应用的当前版本
   await db.update(apps)
-    .set({ currentVersion: data.version, updatedAt: new Date() })
+    .set({ currentVersion: version, updatedAt: new Date() })
     .where(eq(apps.id, appId));
 
   return successResponse(
@@ -247,14 +444,15 @@ export const create = async (c: Parameters<AppRouteHandler<CreateRoute>>[0]) => 
       version: newVersion.version,
       status: newVersion.status,
       publishedAt: newVersion.publishedAt || undefined,
+      uploadId: uploadRecord.id,
       taskId,
     },
     "版本创建成功",
     HttpStatusCodes.CREATED,
   );
-};
+}
 
-export const publish = async (c: Parameters<AppRouteHandler<PublishRoute>>[0]) => {
+export async function publish(c: Parameters<AppRouteHandler<PublishRoute>>[0]) {
   const { appId, id } = c.req.valid("param");
   const data = c.req.valid("json");
   const userPayload = c.get("user");
@@ -326,9 +524,9 @@ export const publish = async (c: Parameters<AppRouteHandler<PublishRoute>>[0]) =
     taskId: task.id,
     status: task.status,
   }, "发布任务已创建");
-};
+}
 
-export const rollback = async (c: Parameters<AppRouteHandler<RollbackRoute>>[0]) => {
+export async function rollback(c: Parameters<AppRouteHandler<RollbackRoute>>[0]) {
   const { appId, id } = c.req.valid("param");
   const data = c.req.valid("json");
   const userPayload = c.get("user");
@@ -402,9 +600,9 @@ export const rollback = async (c: Parameters<AppRouteHandler<RollbackRoute>>[0])
     taskId: task.id,
     status: task.status,
   }, "回滚任务已创建");
-};
+}
 
-export const remove = async (c: Parameters<AppRouteHandler<RemoveRoute>>[0]) => {
+export async function remove(c: Parameters<AppRouteHandler<RemoveRoute>>[0]) {
   const { appId, id } = c.req.valid("param");
 
   // 验证版本是否存在
@@ -438,5 +636,4 @@ export const remove = async (c: Parameters<AppRouteHandler<RemoveRoute>>[0]) => 
     .where(eq(versions.id, id));
 
   return successResponse(c, null, "版本删除成功");
-};
-
+}
