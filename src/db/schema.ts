@@ -76,6 +76,7 @@ export const versions = sqliteTable("versions", {
   appId: text().notNull().references(() => apps.id, { onDelete: "cascade" }),
   version: text().notNull(), // 1.2.0
   build: text().notNull(), // 构建号，如：100, 101, 102
+  runtimeVersion: text().notNull(), // Runtime 版本
   name: text().notNull(), // 版本名称
   description: text(),
   status: text().notNull().default("draft"), // draft, published, rolled_back

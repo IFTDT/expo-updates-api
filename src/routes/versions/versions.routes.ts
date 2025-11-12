@@ -31,6 +31,7 @@ export const list = createRoute({
             id: z.string(),
             version: z.string(),
             build: z.string(),
+            runtimeVersion: z.string(),
             name: z.string(),
             description: z.string().nullable().optional(),
             status: z.string(),
@@ -77,6 +78,7 @@ export const getOne = createRoute({
           id: z.string(),
           version: z.string(),
           build: z.string(),
+          runtimeVersion: z.string(),
           name: z.string(),
           description: z.string().nullable().optional(),
           status: z.string(),
@@ -166,6 +168,7 @@ export const createFromUrl = createRoute({
       z.object({
         version: z.string().min(1, "版本号不能为空"),
         build: z.string().min(1, "构建号不能为空"),
+        runtimeVersion: z.string().min(1, "Runtime 版本不能为空"),
         name: z.string().min(1, "版本名称不能为空"),
         description: z.string().optional(),
         isMandatory: z.boolean().default(false),
