@@ -1,6 +1,5 @@
-import { z } from "@hono/zod-openapi";
-import { integer, sqliteTable, text, index, unique } from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
+import { index, integer, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 
 import { toZodV4SchemaTyped } from "@/lib/zod-utils";
@@ -24,7 +23,7 @@ export const users = sqliteTable("users", {
     .$onUpdate(() => new Date())
     .notNull(),
   lastLoginAt: integer({ mode: "timestamp" }),
-}, (table) => ({
+}, table => ({
   emailIdx: index("users_email_idx").on(table.email),
 }));
 
@@ -38,7 +37,7 @@ export const userApps = sqliteTable("user_apps", {
   createdAt: integer({ mode: "timestamp" })
     .$defaultFn(() => new Date())
     .notNull(),
-}, (table) => ({
+}, table => ({
   userIdIdx: index("user_apps_user_id_idx").on(table.userId),
   appIdIdx: index("user_apps_app_id_idx").on(table.appId),
   uniqueUserApp: unique("user_apps_user_app_unique").on(table.userId, table.appId),
@@ -63,7 +62,7 @@ export const apps = sqliteTable("apps", {
     .$defaultFn(() => new Date())
     .$onUpdate(() => new Date())
     .notNull(),
-}, (table) => ({
+}, table => ({
   appIdIdx: index("apps_app_id_idx").on(table.appId),
   ownerIdIdx: index("apps_owner_id_idx").on(table.ownerId),
   statusIdx: index("apps_status_idx").on(table.status),
@@ -76,6 +75,7 @@ export const versions = sqliteTable("versions", {
     .$defaultFn(() => crypto.randomUUID()),
   appId: text().notNull().references(() => apps.id, { onDelete: "cascade" }),
   version: text().notNull(), // 1.2.0
+  build: text().notNull(), // 构建号，如：100, 101, 102
   name: text().notNull(), // 版本名称
   description: text(),
   status: text().notNull().default("draft"), // draft, published, rolled_back
@@ -93,12 +93,13 @@ export const versions = sqliteTable("versions", {
     .$defaultFn(() => new Date())
     .$onUpdate(() => new Date())
     .notNull(),
-}, (table) => ({
-  appIdIdx: index("versions_app_id_idx").on(table.appId),
-  statusIdx: index("versions_status_idx").on(table.status),
-  versionIdx: index("versions_version_idx").on(table.version),
-  appVersionUnique: unique("versions_app_version_unique").on(table.appId, table.version),
-}));
+});
+
+export const versionsAppIdIdx = index("versions_app_id_idx").on(versions.appId);
+export const versionsStatusIdx = index("versions_status_idx").on(versions.status);
+export const versionsVersionIdx = index("versions_version_idx").on(versions.version);
+export const versionsBuildIdx = index("versions_build_idx").on(versions.build);
+export const versionsAppBuildUnique = unique("versions_app_build_unique").on(versions.appId, versions.build);
 
 // ==================== 更新任务表 ====================
 export const updateTasks = sqliteTable("update_tasks", {
@@ -125,7 +126,7 @@ export const updateTasks = sqliteTable("update_tasks", {
     .$defaultFn(() => new Date())
     .$onUpdate(() => new Date())
     .notNull(),
-}, (table) => ({
+}, table => ({
   appIdIdx: index("update_tasks_app_id_idx").on(table.appId),
   versionIdIdx: index("update_tasks_version_id_idx").on(table.versionId),
   statusIdx: index("update_tasks_status_idx").on(table.status),
@@ -151,7 +152,7 @@ export const appUsers = sqliteTable("app_users", {
     .$defaultFn(() => new Date())
     .$onUpdate(() => new Date())
     .notNull(),
-}, (table) => ({
+}, table => ({
   appIdIdx: index("app_users_app_id_idx").on(table.appId),
   deviceIdIdx: index("app_users_device_id_idx").on(table.deviceId),
   statusIdx: index("app_users_status_idx").on(table.status),
@@ -174,7 +175,7 @@ export const userGroups = sqliteTable("user_groups", {
     .$defaultFn(() => new Date())
     .$onUpdate(() => new Date())
     .notNull(),
-}, (table) => ({
+}, table => ({
   appIdIdx: index("user_groups_app_id_idx").on(table.appId),
   nameIdx: index("user_groups_name_idx").on(table.name),
 }));
@@ -189,7 +190,7 @@ export const userGroupMembers = sqliteTable("user_group_members", {
   createdAt: integer({ mode: "timestamp" })
     .$defaultFn(() => new Date())
     .notNull(),
-}, (table) => ({
+}, table => ({
   groupIdIdx: index("user_group_members_group_id_idx").on(table.groupId),
   appUserIdIdx: index("user_group_members_app_user_id_idx").on(table.appUserId),
   uniqueGroupUser: unique("user_group_members_group_user_unique").on(table.groupId, table.appUserId),
@@ -211,7 +212,7 @@ export const operationLogs = sqliteTable("operation_logs", {
   createdAt: integer({ mode: "timestamp" })
     .$defaultFn(() => new Date())
     .notNull(),
-}, (table) => ({
+}, table => ({
   appIdIdx: index("operation_logs_app_id_idx").on(table.appId),
   userIdIdx: index("operation_logs_user_id_idx").on(table.userId),
   typeIdx: index("operation_logs_type_idx").on(table.type),
@@ -240,7 +241,7 @@ export const uploads = sqliteTable("uploads", {
     .$defaultFn(() => new Date())
     .$onUpdate(() => new Date())
     .notNull(),
-}, (table) => ({
+}, table => ({
   appIdIdx: index("uploads_app_id_idx").on(table.appId),
   statusIdx: index("uploads_status_idx").on(table.status),
   uploadedByIdx: index("uploads_uploaded_by_idx").on(table.uploadedBy),

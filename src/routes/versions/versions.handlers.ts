@@ -75,6 +75,7 @@ export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
     return {
       id: item.id,
       version: item.version,
+      build: item.build,
       name: item.name,
       description: item.description,
       status: item.status,
@@ -147,6 +148,7 @@ export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
   return successResponse(c, {
     id: version.id,
     version: version.version,
+    build: version.build,
     name: version.name,
     description: version.description,
     status: version.status,
@@ -217,6 +219,7 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
 
   const file = body.file as File | undefined;
   const version = typeof body.version === "string" ? body.version.trim() : undefined;
+  const build = typeof body.build === "string" ? body.build.trim() : undefined;
   const runtimeVersion = typeof body.runtimeVersion === "string" ? body.runtimeVersion.trim() : undefined;
   const name = typeof body.name === "string" ? body.name.trim() : undefined;
   const description = typeof body.description === "string" ? body.description : undefined;
@@ -240,6 +243,16 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
       "VALIDATION_ERROR",
       "版本号不能为空",
       { field: "version" },
+      HttpStatusCodes.BAD_REQUEST,
+    );
+  }
+
+  if (!build) {
+    return errorResponse(
+      c,
+      "VALIDATION_ERROR",
+      "构建号不能为空",
+      { field: "build" },
       HttpStatusCodes.BAD_REQUEST,
     );
   }
@@ -317,17 +330,17 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
     ? isMandatoryRaw === "true"
     : Boolean(isMandatoryRaw);
 
-  // 检查版本号是否已存在
+  // 检查构建号是否已存在（同一应用下构建号必须唯一）
   const existing = await db.query.versions.findFirst({
-    where: and(eq(versions.appId, appId), eq(versions.version, version)),
+    where: and(eq(versions.appId, appId), eq(versions.build, build)),
   });
 
   if (existing) {
     return errorResponse(
       c,
-      "VERSION_CONFLICT",
-      "版本号已存在",
-      { version },
+      "BUILD_CONFLICT",
+      "构建号已存在",
+      { build },
       HttpStatusCodes.CONFLICT,
     );
   }
@@ -407,6 +420,7 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
   const [newVersion] = await db.insert(versions).values({
     appId,
     version,
+    build,
     name,
     description,
     status,
@@ -482,16 +496,17 @@ export async function createFromUrl(c: Parameters<AppRouteHandler<CreateFromUrlR
     );
   }
 
+  // 检查构建号是否已存在（同一应用下构建号必须唯一）
   const existing = await db.query.versions.findFirst({
-    where: and(eq(versions.appId, appId), eq(versions.version, data.version)),
+    where: and(eq(versions.appId, appId), eq(versions.build, data.build)),
   });
 
   if (existing) {
     return errorResponse(
       c,
-      "VERSION_CONFLICT",
-      "版本号已存在",
-      { version: data.version },
+      "BUILD_CONFLICT",
+      "构建号已存在",
+      { build: data.build },
       HttpStatusCodes.CONFLICT,
     );
   }
@@ -529,6 +544,7 @@ export async function createFromUrl(c: Parameters<AppRouteHandler<CreateFromUrlR
   const [newVersion] = await db.insert(versions).values({
     appId,
     version: data.version,
+    build: data.build,
     name: data.name,
     description: data.description,
     status,
