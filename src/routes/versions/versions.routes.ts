@@ -1,10 +1,9 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import * as HttpStatusCodes from "stoker/http-status-codes";
-import { jsonContent } from "stoker/openapi/helpers";
-import { createErrorSchema } from "stoker/openapi/schemas";
+import { jsonContent, jsonContentRequired } from "stoker/openapi/helpers";
 
-import { paginationQuerySchema, sortQuerySchema } from "@/lib/pagination";
 import { notFoundSchema } from "@/lib/constants";
+import { paginationQuerySchema, sortQuerySchema } from "@/lib/pagination";
 import { AppIdParamsSchema, AppIdVersionIdParamsSchema } from "@/lib/schemas";
 
 const tags = ["Versions"];
@@ -246,4 +245,3 @@ export type CreateRoute = typeof create;
 export type PublishRoute = typeof publish;
 export type RollbackRoute = typeof rollback;
 export type RemoveRoute = typeof remove;
-
