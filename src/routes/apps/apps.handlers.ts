@@ -6,7 +6,7 @@ import { apps, userApps, versions, appUsers } from "@/db/schema";
 import { paginationResponse, errorResponse, successResponse } from "@/lib/response";
 import type { AppRouteHandler } from "@/lib/types";
 
-import type { CreateRoute, GetOneRoute, ListRoute, UpdateRoute } from "./apps.routes";
+import type { CreateRoute, GetOneRoute, ListRoute, UpdateRoute, RemoveRoute } from "./apps.routes";
 
 export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
   const query = c.req.valid("query");
@@ -251,5 +251,52 @@ export const update = async (c: Parameters<AppRouteHandler<UpdateRoute>>[0]) => 
     name: updatedApp.name,
     updatedAt: updatedApp.updatedAt,
   });
+};
+
+export const remove = async (c: Parameters<AppRouteHandler<RemoveRoute>>[0]) => {
+  const { id } = c.req.valid("param");
+  const userPayload = c.get("user");
+
+  if (!userPayload) {
+    return errorResponse(
+      c,
+      "AUTH_REQUIRED",
+      "需要认证",
+      undefined,
+      HttpStatusCodes.UNAUTHORIZED,
+    );
+  }
+
+  // 查询应用
+  const app = await db.query.apps.findFirst({
+    where: eq(apps.id, id),
+  });
+
+  if (!app) {
+    return errorResponse(
+      c,
+      "RESOURCE_NOT_FOUND",
+      "应用不存在",
+      { resource: "app", id },
+      HttpStatusCodes.NOT_FOUND,
+    );
+  }
+
+  // 权限检查：只有应用所有者或管理员才能删除应用
+  if (userPayload.role !== "admin" && app.ownerId !== userPayload.userId) {
+    return errorResponse(
+      c,
+      "PERMISSION_DENIED",
+      "只有应用所有者或管理员才能删除应用",
+      undefined,
+      HttpStatusCodes.FORBIDDEN,
+    );
+  }
+
+  // 删除应用（由于设置了 onDelete: "cascade"，关联数据会自动删除）
+  await db.delete(apps)
+    .where(eq(apps.id, id));
+
+  return successResponse(c, null, "应用删除成功");
 };
 

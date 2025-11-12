@@ -170,8 +170,35 @@ export const update = createRoute({
   },
 });
 
+// ==================== 删除应用 ====================
+export const remove = createRoute({
+  path: "/api/apps/{id}",
+  method: "delete",
+  tags,
+  security: [{ Bearer: [] }],
+  request: {
+    params: StringIdParamsSchema,
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(
+      z.object({
+        success: z.literal(true),
+        data: z.null(),
+        message: z.string(),
+      }),
+      "删除成功",
+    ),
+    [HttpStatusCodes.NOT_FOUND]: jsonContent(notFoundSchema, "应用不存在"),
+    [HttpStatusCodes.FORBIDDEN]: jsonContent(
+      createErrorSchema(z.object({})),
+      "权限不足",
+    ),
+  },
+});
+
 export type ListRoute = typeof list;
 export type GetOneRoute = typeof getOne;
 export type CreateRoute = typeof create;
 export type UpdateRoute = typeof update;
+export type RemoveRoute = typeof remove;
 
