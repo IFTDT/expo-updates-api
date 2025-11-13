@@ -187,9 +187,41 @@ export const rollback = createRoute({
   },
 });
 
+// ==================== 设置用户最新版本 ====================
+export const setTargetVersion = createRoute({
+  path: "/api/apps/{appId}/users/{id}/target-version",
+  method: "put",
+  tags,
+  security: [{ Bearer: [] }],
+  request: {
+    params: AppIdVersionIdParamsSchema,
+    body: jsonContentRequired(
+      z.object({
+        versionId: z.string().min(1, "版本ID不能为空"),
+      }),
+      "设置用户最新版本请求",
+    ),
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(
+      z.object({
+        success: z.literal(true),
+        data: z.object({
+          id: z.string(),
+          targetVersionId: z.string().nullable(),
+          updatedAt: z.date(),
+        }),
+      }),
+      "设置成功",
+    ),
+    [HttpStatusCodes.NOT_FOUND]: jsonContent(notFoundSchema, "用户或版本不存在"),
+  },
+});
+
 export type ListRoute = typeof list;
 export type GetOneRoute = typeof getOne;
 export type UpdateVersionRoute = typeof updateVersion;
 export type BatchUpdateRoute = typeof batchUpdate;
 export type RollbackRoute = typeof rollback;
+export type SetTargetVersionRoute = typeof setTargetVersion;
 

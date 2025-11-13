@@ -13,5 +13,6 @@ router.openapi(routes.getOne, handlers.getOne);
 router.openapi(routes.create, handlers.create);
 router.openapi(routes.update, handlers.update);
 router.openapi(routes.remove, handlers.remove);
+router.openapi(routes.setCurrentVersion, handlers.setCurrentVersion);
 
 export default router;

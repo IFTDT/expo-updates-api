@@ -6,7 +6,7 @@ import { apps, userApps, versions, appUsers } from "@/db/schema";
 import { paginationResponse, errorResponse, successResponse } from "@/lib/response";
 import type { AppRouteHandler } from "@/lib/types";
 
-import type { CreateRoute, GetOneRoute, ListRoute, UpdateRoute, RemoveRoute } from "./apps.routes";
+import type { CreateRoute, GetOneRoute, ListRoute, UpdateRoute, RemoveRoute, SetCurrentVersionRoute } from "./apps.routes";
 
 export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
   const query = c.req.valid("query");
@@ -298,5 +298,56 @@ export const remove = async (c: Parameters<AppRouteHandler<RemoveRoute>>[0]) => 
     .where(eq(apps.id, id));
 
   return successResponse(c, null, "应用删除成功");
+};
+
+export const setCurrentVersion = async (c: Parameters<AppRouteHandler<SetCurrentVersionRoute>>[0]) => {
+  const { id } = c.req.valid("param");
+  const { versionId } = c.req.valid("json");
+
+  // 验证应用是否存在
+  const app = await db.query.apps.findFirst({
+    where: eq(apps.id, id),
+  });
+
+  if (!app) {
+    return errorResponse(
+      c,
+      "RESOURCE_NOT_FOUND",
+      "应用不存在",
+      { resource: "app", id },
+      HttpStatusCodes.NOT_FOUND,
+    );
+  }
+
+  // 验证版本是否存在且属于该应用
+  const version = await db.query.versions.findFirst({
+    where: and(eq(versions.id, versionId), eq(versions.appId, id)),
+  });
+
+  if (!version) {
+    return errorResponse(
+      c,
+      "RESOURCE_NOT_FOUND",
+      "版本不存在或不属于该应用",
+      { resource: "version", id: versionId },
+      HttpStatusCodes.NOT_FOUND,
+    );
+  }
+
+  // 更新应用的最新版本ID
+  const [updatedApp] = await db.update(apps)
+    .set({
+      currentVersionId: versionId,
+      currentVersion: version.version, // 同时更新文本版本号以保持兼容
+      updatedAt: new Date(),
+    })
+    .where(eq(apps.id, id))
+    .returning();
+
+  return successResponse(c, {
+    id: updatedApp.id,
+    currentVersionId: updatedApp.currentVersionId,
+    updatedAt: updatedApp.updatedAt,
+  });
 };
 

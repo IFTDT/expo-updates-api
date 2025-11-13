@@ -196,9 +196,41 @@ export const remove = createRoute({
   },
 });
 
+// ==================== 设置应用最新版本 ====================
+export const setCurrentVersion = createRoute({
+  path: "/api/apps/{id}/current-version",
+  method: "put",
+  tags,
+  security: [{ Bearer: [] }],
+  request: {
+    params: StringIdParamsSchema,
+    body: jsonContentRequired(
+      z.object({
+        versionId: z.string().min(1, "版本ID不能为空"),
+      }),
+      "设置应用最新版本请求",
+    ),
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(
+      z.object({
+        success: z.literal(true),
+        data: z.object({
+          id: z.string(),
+          currentVersionId: z.string().nullable(),
+          updatedAt: z.date(),
+        }),
+      }),
+      "设置成功",
+    ),
+    [HttpStatusCodes.NOT_FOUND]: jsonContent(notFoundSchema, "应用或版本不存在"),
+  },
+});
+
 export type ListRoute = typeof list;
 export type GetOneRoute = typeof getOne;
 export type CreateRoute = typeof create;
 export type UpdateRoute = typeof update;
 export type RemoveRoute = typeof remove;
+export type SetCurrentVersionRoute = typeof setCurrentVersion;
 

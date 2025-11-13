@@ -23,45 +23,60 @@ import {
   signRSASHA256,
 } from "@/lib/expo-updates-helpers";
 
-import type {
-  assetsRoute,
-  manifestRoute,
-} from "./expo-updates.routes";
+import type { assetsRoute, manifestRoute } from "./expo-updates.routes";
 
 /**
  * Manifest 处理函数
  */
-export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (c) => {
+export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (
+  c,
+) => {
   // 只支持 GET 请求
   if (c.req.method !== "GET") {
-    return c.json({ success: false, error: { code: "METHOD_NOT_ALLOWED", message: "Expected GET." } }, 405);
+    return c.json(
+      {
+        success: false,
+        error: { code: "METHOD_NOT_ALLOWED", message: "Expected GET." },
+      },
+      405,
+    );
   }
 
   // 提取协议版本（默认 0）
-  const protocolVersion = Number.parseInt(c.req.header("expo-protocol-version") || "0", 10);
+  const protocolVersion = Number.parseInt(
+    c.req.header("expo-protocol-version") || "0",
+    10,
+  );
 
   // 提取并验证平台
   const platform = c.req.header("expo-platform") || c.req.query("platform");
   if (platform !== "ios" && platform !== "android") {
-    return c.json({
-      success: false,
-      error: {
-        code: "INVALID_PLATFORM",
-        message: "Unsupported platform. Expected either ios or android.",
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "INVALID_PLATFORM",
+          message: "Unsupported platform. Expected either ios or android.",
+        },
       },
-    }, 400);
+      400,
+    );
   }
 
   // 提取并验证运行时版本
-  const runtimeVersion = c.req.header("expo-runtime-version") || c.req.query("runtime-version");
+  const runtimeVersion =
+    c.req.header("expo-runtime-version") || c.req.query("runtime-version");
   if (!runtimeVersion || typeof runtimeVersion !== "string") {
-    return c.json({
-      success: false,
-      error: {
-        code: "MISSING_RUNTIME_VERSION",
-        message: "No runtimeVersion provided.",
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "MISSING_RUNTIME_VERSION",
+          message: "No runtimeVersion provided.",
+        },
       },
-    }, 400);
+      400,
+    );
   }
 
   // 提取应用包名和设备/用户信息
@@ -77,38 +92,42 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (c) 
     });
 
     if (!app) {
-      return c.json({
-        success: false,
-        error: {
-          code: "APP_NOT_FOUND",
-          message: `App with id ${appId} not found.`,
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "APP_NOT_FOUND",
+            message: `App with id ${appId} not found.`,
+          },
         },
-      }, 404);
+        404,
+      );
     }
 
     // 如果应用已停用，返回错误
     if (app.status !== "active") {
-      return c.json({
-        success: false,
-        error: {
-          code: "APP_INACTIVE",
-          message: `App ${appId} is inactive.`,
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "APP_INACTIVE",
+            message: `App ${appId} is inactive.`,
+          },
         },
-      }, 403);
+        403,
+      );
     }
 
     // 如果提供了 deviceId，记录或更新设备信息
     if (deviceId) {
       const existingAppUser = await db.query.appUsers.findFirst({
-        where: and(
-          eq(appUsers.appId, app.id),
-          eq(appUsers.deviceId, deviceId),
-        ),
+        where: and(eq(appUsers.appId, app.id), eq(appUsers.deviceId, deviceId)),
       });
 
       if (existingAppUser) {
         // 更新设备信息
-        await db.update(appUsers)
+        await db
+          .update(appUsers)
           .set({
             currentVersion: runtimeVersion,
             lastUpdateAt: new Date(),
@@ -117,8 +136,7 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (c) 
             updatedAt: new Date(),
           })
           .where(eq(appUsers.id, existingAppUser.id));
-      }
-      else {
+      } else {
         // 创建新设备记录
         await db.insert(appUsers).values({
           appId: app.id,
@@ -140,20 +158,23 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (c) 
       "uploads",
       appId || undefined,
     );
-  }
-  catch (error: any) {
-    return c.json({
-      success: false,
-      error: {
-        code: "UPDATE_NOT_FOUND",
-        message: error.message,
+  } catch (error: any) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "UPDATE_NOT_FOUND",
+          message: error.message,
+        },
       },
-    }, 404);
+      404,
+    );
   }
 
   try {
     // 读取元数据
-    const { metadataJson, createdAt, id } = await getMetadataAsync(updateBundlePath);
+    const { metadataJson, createdAt, id } =
+      await getMetadataAsync(updateBundlePath);
     const currentUpdateId = convertSHA256HashToUUID(id);
 
     // Protocol version 1 特有功能：检查 rollback 和 no update available
@@ -171,15 +192,21 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (c) 
         }
 
         // 返回 rollback 指令
-        return await putRollBackInResponseAsync(c, updateBundlePath, protocolVersion);
+        return await putRollBackInResponseAsync(
+          c,
+          updateBundlePath,
+          protocolVersion,
+        );
       }
 
       // 检查是否已经是当前更新（no update available）
       if (clientCurrentUpdateId === currentUpdateId) {
         return await putNoUpdateAvailableInResponseAsync(c, protocolVersion);
       }
-    }
-    else if (protocolVersion === 0 && clientCurrentUpdateId === currentUpdateId) {
+    } else if (
+      protocolVersion === 0 &&
+      clientCurrentUpdateId === currentUpdateId
+    ) {
       // Protocol version 0 不支持 noUpdateAvailable 指令
       // 但是我们可以跳过构建 manifest，直接返回现有更新
       // 为了保持兼容性，我们仍然返回最新更新
@@ -220,13 +247,17 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (c) 
     if (c.req.header("expo-expect-signature")) {
       const privateKey = await getPrivateKeyAsync();
       if (!privateKey) {
-        return c.json({
-          success: false,
-          error: {
-            code: "SIGNING_ERROR",
-            message: "Code signing requested but no key supplied when starting server.",
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: "SIGNING_ERROR",
+              message:
+                "Code signing requested but no key supplied when starting server.",
+            },
           },
-        }, 400);
+          400,
+        );
       }
 
       const manifestString = JSON.stringify(manifest);
@@ -257,15 +288,17 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (c) 
       headers: c.res.headers,
       status: 200,
     });
-  }
-  catch (error: any) {
-    return c.json({
-      success: false,
-      error: {
-        code: "INTERNAL_ERROR",
-        message: error.message,
+  } catch (error: any) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "INTERNAL_ERROR",
+          message: error.message,
+        },
       },
-    }, 500);
+      500,
+    );
   }
 };
 
@@ -278,24 +311,30 @@ async function putRollBackInResponseAsync(
   protocolVersion: number,
 ): Promise<Response> {
   if (protocolVersion === 0) {
-    return c.json({
-      success: false,
-      error: {
-        code: "ROLLBACK_NOT_SUPPORTED",
-        message: "Rollbacks not supported on protocol version 0",
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "ROLLBACK_NOT_SUPPORTED",
+          message: "Rollbacks not supported on protocol version 0",
+        },
       },
-    }, 400);
+      400,
+    );
   }
 
   const embeddedUpdateId = c.req.header("expo-embedded-update-id");
   if (!embeddedUpdateId) {
-    return c.json({
-      success: false,
-      error: {
-        code: "MISSING_EMBEDDED_UPDATE_ID",
-        message: "Invalid Expo-Embedded-Update-ID request header specified.",
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "MISSING_EMBEDDED_UPDATE_ID",
+          message: "Invalid Expo-Embedded-Update-ID request header specified.",
+        },
       },
-    }, 400);
+      400,
+    );
   }
 
   const currentUpdateId = c.req.header("expo-current-update-id");
@@ -311,13 +350,17 @@ async function putRollBackInResponseAsync(
   if (c.req.header("expo-expect-signature")) {
     const privateKey = await getPrivateKeyAsync();
     if (!privateKey) {
-      return c.json({
-        success: false,
-        error: {
-          code: "SIGNING_ERROR",
-          message: "Code signing requested but no key supplied when starting server.",
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "SIGNING_ERROR",
+            message:
+              "Code signing requested but no key supplied when starting server.",
+          },
         },
-      }, 400);
+        400,
+      );
     }
 
     const directiveString = JSON.stringify(directive);
@@ -360,13 +403,17 @@ async function putNoUpdateAvailableInResponseAsync(
   if (protocolVersion === 0) {
     // Protocol version 0 不支持 noUpdateAvailable 指令
     // 在这种情况下，应该返回最新的更新
-    return c.json({
-      success: false,
-      error: {
-        code: "NO_UPDATE_DIRECTIVE_NOT_SUPPORTED",
-        message: "NoUpdateAvailable directive not available in protocol version 0",
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "NO_UPDATE_DIRECTIVE_NOT_SUPPORTED",
+          message:
+            "NoUpdateAvailable directive not available in protocol version 0",
+        },
       },
-    }, 400);
+      400,
+    );
   }
 
   const directive = createNoUpdateDirective();
@@ -376,13 +423,17 @@ async function putNoUpdateAvailableInResponseAsync(
   if (c.req.header("expo-expect-signature")) {
     const privateKey = await getPrivateKeyAsync();
     if (!privateKey) {
-      return c.json({
-        success: false,
-        error: {
-          code: "SIGNING_ERROR",
-          message: "Code signing requested but no key supplied when starting server.",
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "SIGNING_ERROR",
+            message:
+              "Code signing requested but no key supplied when starting server.",
+          },
         },
-      }, 400);
+        400,
+      );
     }
 
     const directiveString = JSON.stringify(directive);
@@ -426,35 +477,44 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
 
   // 验证资源名称
   if (!assetName || typeof assetName !== "string") {
-    return c.json({
-      success: false,
-      error: {
-        code: "INVALID_ASSET_NAME",
-        message: "No asset name provided.",
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "INVALID_ASSET_NAME",
+          message: "No asset name provided.",
+        },
       },
-    }, 400);
+      400,
+    );
   }
 
   // 验证平台
   if (platform !== "ios" && platform !== "android") {
-    return c.json({
-      success: false,
-      error: {
-        code: "INVALID_PLATFORM",
-        message: "No platform provided. Expected \"ios\" or \"android\".",
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "INVALID_PLATFORM",
+          message: 'No platform provided. Expected "ios" or "android".',
+        },
       },
-    }, 400);
+      400,
+    );
   }
 
   // 验证运行时版本
   if (!runtimeVersion || typeof runtimeVersion !== "string") {
-    return c.json({
-      success: false,
-      error: {
-        code: "MISSING_RUNTIME_VERSION",
-        message: "No runtimeVersion provided.",
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "MISSING_RUNTIME_VERSION",
+          message: "No runtimeVersion provided.",
+        },
       },
-    }, 400);
+      400,
+    );
   }
 
   // 提取应用包名（从 header 或 query）
@@ -467,23 +527,29 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
     });
 
     if (!app) {
-      return c.json({
-        success: false,
-        error: {
-          code: "APP_NOT_FOUND",
-          message: `App with id ${appId} not found.`,
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "APP_NOT_FOUND",
+            message: `App with id ${appId} not found.`,
+          },
         },
-      }, 404);
+        404,
+      );
     }
 
     if (app.status !== "active") {
-      return c.json({
-        success: false,
-        error: {
-          code: "APP_INACTIVE",
-          message: `App ${appId} is inactive.`,
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "APP_INACTIVE",
+            message: `App ${appId} is inactive.`,
+          },
         },
-      }, 403);
+        403,
+      );
     }
   }
 
@@ -495,15 +561,17 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
       "uploads",
       appId || undefined,
     );
-  }
-  catch (error: any) {
-    return c.json({
-      success: false,
-      error: {
-        code: "UPDATE_NOT_FOUND",
-        message: error.message,
+  } catch (error: any) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "UPDATE_NOT_FOUND",
+          message: error.message,
+        },
       },
-    }, 404);
+      404,
+    );
   }
   console.log("updateBundlePath", updateBundlePath);
 
@@ -512,28 +580,28 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
   try {
     const { metadataJson: meta } = await getMetadataAsync(updateBundlePath);
     metadataJson = meta;
-  }
-  catch (error: any) {
-    return c.json({
-      success: false,
-      error: {
-        code: "METADATA_ERROR",
-        message: "Failed to read metadata.",
+  } catch (error: any) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "METADATA_ERROR",
+          message: "Failed to read metadata.",
+        },
       },
-    }, 500);
+      500,
+    );
   }
 
   // 解析资源路径 - assetName 可能是相对路径或绝对路径
   let assetPath: string;
   if (path.isAbsolute(assetName)) {
     assetPath = assetName;
-  }
-  else {
+  } else {
     // 如果是相对路径，尝试相对于更新包路径或工作目录
     if (assetName.startsWith(updateBundlePath)) {
       assetPath = path.resolve(assetName);
-    }
-    else {
+    } else {
       // 尝试在更新包目录中查找
       assetPath = path.join(updateBundlePath, assetName);
     }
@@ -544,15 +612,17 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
   // 检查资源是否存在
   try {
     await fs.access(assetPath, fs.constants.F_OK);
-  }
-  catch {
-    return c.json({
-      success: false,
-      error: {
-        code: "ASSET_NOT_FOUND",
-        message: `Asset "${assetName}" does not exist.`,
+  } catch {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "ASSET_NOT_FOUND",
+          message: `Asset "${assetName}" does not exist.`,
+        },
       },
-    }, 404);
+      404,
+    );
   }
 
   // 确定资源类型
@@ -561,19 +631,20 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
     (asset: any) => asset.path === relativePath,
   );
 
-  const isLaunchAsset = metadataJson.fileMetadata[platform].bundle === relativePath;
+  const isLaunchAsset =
+    metadataJson.fileMetadata[platform].bundle === relativePath;
 
   // 确定 MIME 类型
   let contentType: string;
   if (isLaunchAsset) {
     contentType = "application/javascript";
-  }
-  else if (assetMetadata?.ext) {
-    const ext = assetMetadata.ext.startsWith(".") ? assetMetadata.ext : `.${assetMetadata.ext}`;
+  } else if (assetMetadata?.ext) {
+    const ext = assetMetadata.ext.startsWith(".")
+      ? assetMetadata.ext
+      : `.${assetMetadata.ext}`;
     const mimeType = mime.getType(ext);
     contentType = mimeType || "application/octet-stream";
-  }
-  else {
+  } else {
     const ext = path.extname(assetPath);
     const mimeType = mime.getType(ext);
     contentType = mimeType || "application/octet-stream";
@@ -589,14 +660,16 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
       headers: c.res.headers,
       status: 200,
     });
-  }
-  catch (error: any) {
-    return c.json({
-      success: false,
-      error: {
-        code: "FILE_READ_ERROR",
-        message: error.message,
+  } catch (error: any) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "FILE_READ_ERROR",
+          message: error.message,
+        },
       },
-    }, 500);
+      500,
+    );
   }
 };

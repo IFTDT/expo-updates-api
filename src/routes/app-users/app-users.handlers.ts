@@ -6,7 +6,7 @@ import { apps, appUsers, versions, updateTasks } from "@/db/schema";
 import { paginationResponse, errorResponse, successResponse } from "@/lib/response";
 import type { AppRouteHandler } from "@/lib/types";
 
-import type { BatchUpdateRoute, GetOneRoute, ListRoute, RollbackRoute, UpdateVersionRoute } from "./app-users.routes";
+import type { BatchUpdateRoute, GetOneRoute, ListRoute, RollbackRoute, SetTargetVersionRoute, UpdateVersionRoute } from "./app-users.routes";
 
 export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
   const { appId } = c.req.valid("param");
@@ -325,6 +325,56 @@ export const rollback = async (c: Parameters<AppRouteHandler<RollbackRoute>>[0])
 
   return successResponse(c, {
     taskId: task.id,
+  });
+};
+
+export const setTargetVersion = async (c: Parameters<AppRouteHandler<SetTargetVersionRoute>>[0]) => {
+  const { appId, id } = c.req.valid("param");
+  const { versionId } = c.req.valid("json");
+
+  // 验证用户是否存在
+  const user = await db.query.appUsers.findFirst({
+    where: and(eq(appUsers.id, id), eq(appUsers.appId, appId)),
+  });
+
+  if (!user) {
+    return errorResponse(
+      c,
+      "RESOURCE_NOT_FOUND",
+      "用户不存在",
+      { resource: "user", id },
+      HttpStatusCodes.NOT_FOUND,
+    );
+  }
+
+  // 验证版本是否存在且属于该应用
+  const version = await db.query.versions.findFirst({
+    where: and(eq(versions.id, versionId), eq(versions.appId, appId)),
+  });
+
+  if (!version) {
+    return errorResponse(
+      c,
+      "RESOURCE_NOT_FOUND",
+      "版本不存在或不属于该应用",
+      { resource: "version", id: versionId },
+      HttpStatusCodes.NOT_FOUND,
+    );
+  }
+
+  // 更新用户的目标版本ID
+  const [updatedUser] = await db.update(appUsers)
+    .set({
+      targetVersionId: versionId,
+      updatedAt: new Date(),
+    })
+    .where(eq(appUsers.id, id))
+    .returning();
+
+  return successResponse(c, {
+    id: updatedUser.id,
+    targetVersionId: updatedUser.targetVersionId,
+    updatedAt: updatedUser.updatedAt,
   });
 };
 

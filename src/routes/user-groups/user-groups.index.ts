@@ -15,6 +15,7 @@ router.openapi(routes.update, handlers.update);
 router.openapi(routes.remove, handlers.remove);
 router.openapi(routes.addUsers, handlers.addUsers);
 router.openapi(routes.removeUsers, handlers.removeUsers);
+router.openapi(routes.setTargetVersion, handlers.setTargetVersion);
 
 export default router;
 

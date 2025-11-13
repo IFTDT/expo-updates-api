@@ -2,11 +2,11 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 
 import db from "@/db";
-import { apps, userGroups, userGroupMembers, appUsers } from "@/db/schema";
+import { apps, userGroups, userGroupMembers, appUsers, versions } from "@/db/schema";
 import { errorResponse, successResponse } from "@/lib/response";
 import type { AppRouteHandler } from "@/lib/types";
 
-import type { AddUsersRoute, CreateRoute, GetOneRoute, ListRoute, RemoveRoute, RemoveUsersRoute, UpdateRoute } from "./user-groups.routes";
+import type { AddUsersRoute, CreateRoute, GetOneRoute, ListRoute, RemoveRoute, RemoveUsersRoute, UpdateRoute, SetTargetVersionRoute } from "./user-groups.routes";
 
 export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
   const { appId } = c.req.valid("param");
@@ -378,6 +378,56 @@ export const removeUsers = async (c: Parameters<AppRouteHandler<RemoveUsersRoute
   return successResponse(c, {
     removedCount: data.userIds.length,
     userCount: updatedGroup!.members.length,
+  });
+};
+
+export const setTargetVersion = async (c: Parameters<AppRouteHandler<SetTargetVersionRoute>>[0]) => {
+  const { appId, id } = c.req.valid("param");
+  const { versionId } = c.req.valid("json");
+
+  // 验证用户组是否存在
+  const group = await db.query.userGroups.findFirst({
+    where: and(eq(userGroups.id, id), eq(userGroups.appId, appId)),
+  });
+
+  if (!group) {
+    return errorResponse(
+      c,
+      "RESOURCE_NOT_FOUND",
+      "用户组不存在",
+      { resource: "group", id },
+      HttpStatusCodes.NOT_FOUND,
+    );
+  }
+
+  // 验证版本是否存在且属于该应用
+  const version = await db.query.versions.findFirst({
+    where: and(eq(versions.id, versionId), eq(versions.appId, appId)),
+  });
+
+  if (!version) {
+    return errorResponse(
+      c,
+      "RESOURCE_NOT_FOUND",
+      "版本不存在或不属于该应用",
+      { resource: "version", id: versionId },
+      HttpStatusCodes.NOT_FOUND,
+    );
+  }
+
+  // 更新用户组的目标版本ID
+  const [updatedGroup] = await db.update(userGroups)
+    .set({
+      targetVersionId: versionId,
+      updatedAt: new Date(),
+    })
+    .where(eq(userGroups.id, id))
+    .returning();
+
+  return successResponse(c, {
+    id: updatedGroup.id,
+    targetVersionId: updatedGroup.targetVersionId,
+    updatedAt: updatedGroup.updatedAt,
   });
 };
 

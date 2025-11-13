@@ -13,6 +13,7 @@ router.openapi(routes.getOne, handlers.getOne);
 router.openapi(routes.updateVersion, handlers.updateVersion);
 router.openapi(routes.batchUpdate, handlers.batchUpdate);
 router.openapi(routes.rollback, handlers.rollback);
+router.openapi(routes.setTargetVersion, handlers.setTargetVersion);
 
 export default router;
 
