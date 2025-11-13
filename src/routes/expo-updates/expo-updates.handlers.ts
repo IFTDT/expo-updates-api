@@ -79,236 +79,29 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (
     );
   }
 
-  // 提取应用包名和设备/用户信息
   const appId = c.req.header("x-app-id") || c.req.query("app-id");
   const deviceId = c.req.header("x-device-id") || c.req.query("device-id");
   const userId = c.req.header("x-user-id") || c.req.query("user-id");
 
-  // 如果提供了 appId，验证应用是否存在
-  let app: typeof apps.$inferSelect | null = null;
-  let updateBundlePath: string | undefined;
+  const bundleResult = await resolveUpdateBundlePath({
+    runtimeVersion,
+    appId,
+    deviceId,
+    userId,
+    trackDevice: true,
+  });
 
-  if (appId) {
-    const foundApp = await db.query.apps.findFirst({
-      where: eq(apps.appId, appId),
-    });
-
-    if (!foundApp) {
-      return c.json(
-        {
-          success: false,
-          error: {
-            code: "APP_NOT_FOUND",
-            message: `App with id ${appId} not found.`,
-          },
-        },
-        404,
-      );
-    }
-
-    app = foundApp;
-
-    // 如果应用已停用，返回错误
-    if (app.status !== "active") {
-      return c.json(
-        {
-          success: false,
-          error: {
-            code: "APP_INACTIVE",
-            message: `App ${appId} is inactive.`,
-          },
-        },
-        403,
-      );
-    }
-
-    // 如果提供了 deviceId，记录或更新设备信息
-    let appUser: typeof appUsers.$inferSelect | null = null;
-    if (deviceId) {
-      const foundAppUser = await db.query.appUsers.findFirst({
-        where: and(eq(appUsers.appId, app.id), eq(appUsers.deviceId, deviceId)),
-      });
-
-      if (foundAppUser) {
-        appUser = foundAppUser;
-        // 更新设备信息
-        await db
-          .update(appUsers)
-          .set({
-            currentVersion: runtimeVersion,
-            lastUpdateAt: new Date(),
-            userId: userId || foundAppUser.userId,
-            status: "online",
-            updatedAt: new Date(),
-          })
-          .where(eq(appUsers.id, foundAppUser.id));
-      }
-      else {
-        // 创建新设备记录
-        const [newAppUser] = await db.insert(appUsers).values({
-          appId: app.id,
-          deviceId,
-          userId: userId || null,
-          currentVersion: runtimeVersion,
-          lastUpdateAt: new Date(),
-          status: "online",
-        }).returning();
-        appUser = newAppUser;
-      }
-    }
-
-    // 按照优先级策略获取版本ID
-    let targetVersionId: string | null = null;
-
-    // 优先级1: 用户级别的目标版本（优先级最高）
-    if (appUser?.targetVersionId) {
-      targetVersionId = appUser.targetVersionId;
-    }
-    else if (appUser) {
-      // 优先级2: 用户组级别的目标版本（优先级中等）
-      // 查找用户所属的用户组
-      const userGroupMember = await db.query.userGroupMembers.findFirst({
-        where: eq(userGroupMembers.appUserId, appUser.id),
-        with: {
-          group: {
-            columns: {
-              id: true,
-              targetVersionId: true,
-              appId: true,
-            },
-          },
-        },
-      });
-
-      if (userGroupMember?.group?.targetVersionId && userGroupMember.group.appId === app.id) {
-        targetVersionId = userGroupMember.group.targetVersionId;
-      }
-    }
-
-    // 优先级3: 应用级别的当前版本（优先级最低）
-    if (!targetVersionId && app.currentVersionId) {
-      targetVersionId = app.currentVersionId;
-    }
-
-    // 如果找到了目标版本ID，使用该版本
-    if (targetVersionId) {
-      // 查询版本信息
-      const version = await db.query.versions.findFirst({
-        where: and(eq(versions.id, targetVersionId), eq(versions.appId, app.id)),
-      });
-
-      if (!version) {
-        return c.json(
-          {
-            success: false,
-            error: {
-              code: "VERSION_NOT_FOUND",
-              message: `Target version ${targetVersionId} not found.`,
-            },
-          },
-          404,
-        );
-      }
-
-      // 检查版本状态
-      if (version.status !== "published") {
-        return c.json(
-          {
-            success: false,
-            error: {
-              code: "VERSION_NOT_PUBLISHED",
-              message: `Version ${version.version} is not published.`,
-            },
-          },
-          404,
-        );
-      }
-
-      // 使用版本的文件URL作为更新包路径
-      // fileUrl 应该是相对于 uploads 目录的路径，或者是绝对路径
-      if (path.isAbsolute(version.fileUrl)) {
-        updateBundlePath = version.fileUrl;
-      }
-      else {
-        updateBundlePath = path.join(process.cwd(), "uploads", version.fileUrl);
-      }
-
-      // 验证更新包路径是否存在
-      try {
-        await fs.access(updateBundlePath, fs.constants.F_OK);
-      }
-      catch {
-        return c.json(
-          {
-            success: false,
-            error: {
-              code: "UPDATE_NOT_FOUND",
-              message: `Update bundle not found at ${updateBundlePath}.`,
-            },
-          },
-          404,
-        );
-      }
-    }
-    else {
-      // 如果没有设置目标版本，使用原来的逻辑：根据 runtimeVersion 获取最新版本
-      try {
-        updateBundlePath = await getLatestUpdateBundlePathForRuntimeVersionAsync(
-          runtimeVersion,
-          "uploads",
-          appId || undefined,
-        );
-      }
-      catch (error: any) {
-        return c.json(
-          {
-            success: false,
-            error: {
-              code: "UPDATE_NOT_FOUND",
-              message: error.message,
-            },
-          },
-          404,
-        );
-      }
-    }
-  }
-  else {
-    // 如果没有提供 appId，使用原来的逻辑
-    try {
-      updateBundlePath = await getLatestUpdateBundlePathForRuntimeVersionAsync(
-        runtimeVersion,
-        "uploads",
-        appId || undefined,
-      );
-    }
-    catch (error: any) {
-      return c.json(
-        {
-          success: false,
-          error: {
-            code: "UPDATE_NOT_FOUND",
-            message: error.message,
-          },
-        },
-        404,
-      );
-    }
-  }
-
-  // 确保 updateBundlePath 已赋值
-  if (!updateBundlePath) {
+  if (!bundleResult.ok) {
     return c.json(
       {
         success: false,
-        error: {
-          code: "UPDATE_NOT_FOUND",
-          message: "No update bundle path determined.",
-        },
+        error: bundleResult.error,
       },
-      404,
+      bundleResult.status,
     );
   }
+
+  const { updateBundlePath } = bundleResult;
 
   try {
     // 读取元数据
@@ -424,7 +217,10 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (
     c.header("cache-control", "private, max-age=0");
     c.header("content-type", `multipart/mixed; boundary=${form.getBoundary()}`);
 
-    return new Response(form.getBuffer(), {
+    const buffer = form.getBuffer();
+    const body = new Uint8Array(buffer);
+
+    return new Response(body, {
       headers: c.res.headers,
       status: 200,
     });
@@ -528,7 +324,10 @@ async function putRollBackInResponseAsync(
   c.header("cache-control", "private, max-age=0");
   c.header("content-type", `multipart/mixed; boundary=${form.getBoundary()}`);
 
-  return new Response(form.getBuffer(), {
+  const buffer = form.getBuffer();
+  const body = new Uint8Array(buffer);
+
+  return new Response(body, {
     headers: c.res.headers,
     status: 200,
   });
@@ -601,7 +400,10 @@ async function putNoUpdateAvailableInResponseAsync(
   c.header("cache-control", "private, max-age=0");
   c.header("content-type", `multipart/mixed; boundary=${form.getBoundary()}`);
 
-  return new Response(form.getBuffer(), {
+  const buffer = form.getBuffer();
+  const body = new Uint8Array(buffer);
+
+  return new Response(body, {
     headers: c.res.headers,
     status: 200,
   });
@@ -661,69 +463,34 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
   // 提取应用包名（从 header 或 query）
   const appId = c.req.header("x-app-id") || query["app-id"];
 
-  // 如果提供了 appId，验证应用是否存在
-  if (appId) {
-    const app = await db.query.apps.findFirst({
-      where: eq(apps.appId, appId),
-    });
+  const deviceId = c.req.header("x-device-id") || query["device-id"];
+  const userId = c.req.header("x-user-id") || query["user-id"];
 
-    if (!app) {
-      return c.json(
-        {
-          success: false,
-          error: {
-            code: "APP_NOT_FOUND",
-            message: `App with id ${appId} not found.`,
-          },
-        },
-        404,
-      );
-    }
+  const bundleResult = await resolveUpdateBundlePath({
+    runtimeVersion,
+    appId,
+    deviceId,
+    userId,
+  });
 
-    if (app.status !== "active") {
-      return c.json(
-        {
-          success: false,
-          error: {
-            code: "APP_INACTIVE",
-            message: `App ${appId} is inactive.`,
-          },
-        },
-        403,
-      );
-    }
-  }
-
-  // 定位更新包（如果提供了 appId，使用 appId 查找）
-  let updateBundlePath: string;
-  try {
-    updateBundlePath = await getLatestUpdateBundlePathForRuntimeVersionAsync(
-      runtimeVersion,
-      "uploads",
-      appId || undefined,
-    );
-  }
-  catch (error: any) {
+  if (!bundleResult.ok) {
     return c.json(
       {
         success: false,
-        error: {
-          code: "UPDATE_NOT_FOUND",
-          message: error.message,
-        },
+        error: bundleResult.error,
       },
-      404,
+      bundleResult.status,
     );
   }
-  console.log("updateBundlePath", updateBundlePath);
 
+  const { updateBundlePath } = bundleResult;
   // 加载元数据以确定资源类型
   let metadataJson: any;
   try {
     const { metadataJson: meta } = await getMetadataAsync(updateBundlePath);
     metadataJson = meta;
   }
-  catch (error: any) {
+  catch {
     return c.json(
       {
         success: false,
@@ -751,8 +518,6 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
       assetPath = path.join(updateBundlePath, assetName);
     }
   }
-
-  console.log("assetPath", assetPath);
 
   // 检查资源是否存在
   try {
@@ -804,7 +569,9 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
 
     c.header("content-type", contentType);
 
-    return new Response(asset, {
+    const body = new Uint8Array(asset);
+
+    return new Response(body, {
       headers: c.res.headers,
       status: 200,
     });
@@ -822,3 +589,219 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
     );
   }
 };
+
+interface ResolveUpdateBundlePathParams {
+  runtimeVersion: string;
+  appId?: string | null;
+  deviceId?: string | null;
+  userId?: string | null;
+  trackDevice?: boolean;
+}
+
+interface ResolveUpdateBundlePathSuccess {
+  ok: true;
+  updateBundlePath: string;
+}
+
+interface ResolveUpdateBundlePathFailure {
+  ok: false;
+  status: 403 | 404;
+  error: {
+    code: string;
+    message: string;
+  };
+}
+
+type ResolveUpdateBundlePathResult
+  = | ResolveUpdateBundlePathSuccess
+    | ResolveUpdateBundlePathFailure;
+
+async function resolveUpdateBundlePath(
+  params: ResolveUpdateBundlePathParams,
+): Promise<ResolveUpdateBundlePathResult> {
+  const { runtimeVersion, appId, deviceId, userId, trackDevice = false }
+    = params;
+
+  if (!appId) {
+    try {
+      const updateBundlePath
+        = await getLatestUpdateBundlePathForRuntimeVersionAsync(
+          runtimeVersion,
+          "uploads",
+        );
+      return { ok: true, updateBundlePath };
+    }
+    catch (error: any) {
+      return {
+        ok: false,
+        status: 404,
+        error: {
+          code: "UPDATE_NOT_FOUND",
+          message: error.message,
+        },
+      };
+    }
+  }
+
+  const app = await db.query.apps.findFirst({
+    where: eq(apps.appId, appId),
+  });
+
+  if (!app) {
+    return {
+      ok: false,
+      status: 404,
+      error: {
+        code: "APP_NOT_FOUND",
+        message: `App with id ${appId} not found.`,
+      },
+    };
+  }
+
+  if (app.status !== "active") {
+    return {
+      ok: false,
+      status: 403,
+      error: {
+        code: "APP_INACTIVE",
+        message: `App ${appId} is inactive.`,
+      },
+    };
+  }
+
+  let appUser: typeof appUsers.$inferSelect | null = null;
+  if (deviceId) {
+    const foundAppUser = await db.query.appUsers.findFirst({
+      where: and(eq(appUsers.appId, app.id), eq(appUsers.deviceId, deviceId)),
+    });
+
+    if (foundAppUser) {
+      appUser = foundAppUser;
+      if (trackDevice) {
+        await db
+          .update(appUsers)
+          .set({
+            currentVersion: runtimeVersion,
+            lastUpdateAt: new Date(),
+            userId: userId || foundAppUser.userId,
+            status: "online",
+            updatedAt: new Date(),
+          })
+          .where(eq(appUsers.id, foundAppUser.id));
+      }
+    }
+    else if (trackDevice) {
+      const [newAppUser] = await db
+        .insert(appUsers)
+        .values({
+          appId: app.id,
+          deviceId,
+          userId: userId || null,
+          currentVersion: runtimeVersion,
+          lastUpdateAt: new Date(),
+          status: "online",
+        })
+        .returning();
+      appUser = newAppUser;
+    }
+  }
+
+  let targetVersionId: string | null = null;
+
+  if (appUser?.targetVersionId) {
+    targetVersionId = appUser.targetVersionId;
+  }
+  else if (appUser) {
+    const userGroupMember = await db.query.userGroupMembers.findFirst({
+      where: eq(userGroupMembers.appUserId, appUser.id),
+      with: {
+        group: {
+          columns: {
+            id: true,
+            targetVersionId: true,
+            appId: true,
+          },
+        },
+      },
+    });
+
+    if (
+      userGroupMember?.group?.targetVersionId
+      && userGroupMember.group.appId === app.id
+    ) {
+      targetVersionId = userGroupMember.group.targetVersionId;
+    }
+  }
+
+  if (!targetVersionId && app.currentVersionId) {
+    targetVersionId = app.currentVersionId;
+  }
+
+  if (targetVersionId) {
+    const version = await db.query.versions.findFirst({
+      where: and(eq(versions.id, targetVersionId), eq(versions.appId, app.id)),
+    });
+
+    if (!version) {
+      return {
+        ok: false,
+        status: 404,
+        error: {
+          code: "VERSION_NOT_FOUND",
+          message: `Target version ${targetVersionId} not found.`,
+        },
+      };
+    }
+
+    if (version.status !== "published") {
+      return {
+        ok: false,
+        status: 404,
+        error: {
+          code: "VERSION_NOT_PUBLISHED",
+          message: `Version ${version.version} is not published.`,
+        },
+      };
+    }
+
+    const updateBundlePath = path.isAbsolute(version.fileUrl)
+      ? path.join(process.cwd(), version.fileUrl)
+      : path.join(process.cwd(), "uploads", version.fileUrl);
+
+    try {
+      await fs.access(updateBundlePath, fs.constants.F_OK);
+    }
+    catch {
+      return {
+        ok: false,
+        status: 404,
+        error: {
+          code: "UPDATE_NOT_FOUND",
+          message: `Update bundle not found at ${updateBundlePath}.`,
+        },
+      };
+    }
+
+    return { ok: true, updateBundlePath };
+  }
+
+  try {
+    const updateBundlePath
+      = await getLatestUpdateBundlePathForRuntimeVersionAsync(
+        runtimeVersion,
+        "uploads",
+        appId || undefined,
+      );
+    return { ok: true, updateBundlePath };
+  }
+  catch (error: any) {
+    return {
+      ok: false,
+      status: 404,
+      error: {
+        code: "UPDATE_NOT_FOUND",
+        message: error.message,
+      },
+    };
+  }
+}

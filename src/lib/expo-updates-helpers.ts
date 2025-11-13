@@ -63,8 +63,7 @@ export async function getPrivateKeyAsync(): Promise<string | null> {
   try {
     const pemBuffer = await fs.readFile(privateKeyPath);
     return pemBuffer.toString("utf8");
-  }
-  catch {
+  } catch {
     return null;
   }
 }
@@ -72,10 +71,10 @@ export async function getPrivateKeyAsync(): Promise<string | null> {
 /**
  * 转换为字典项表示
  */
-export function convertToDictionaryItemsRepresentation(obj: Record<string, string>): Dictionary {
-  return new Map(
-    Object.entries(obj).map(([k, v]) => [k, [v, new Map()]]),
-  );
+export function convertToDictionaryItemsRepresentation(
+  obj: Record<string, string>,
+): Dictionary {
+  return new Map(Object.entries(obj).map(([k, v]) => [k, [v, new Map()]]));
 }
 
 /**
@@ -88,12 +87,13 @@ export function serializeSignature(dictionary: Dictionary): string {
 /**
  * 检查更新目录是否存在
  */
-export async function checkUpdateDirectoryExists(updatePath: string): Promise<boolean> {
+export async function checkUpdateDirectoryExists(
+  updatePath: string,
+): Promise<boolean> {
   try {
     await fs.access(updatePath, fs.constants.F_OK);
     return true;
-  }
-  catch {
+  } catch {
     return false;
   }
 }
@@ -111,37 +111,41 @@ export async function getLatestUpdateBundlePathForRuntimeVersionAsync(
   let runtimeDir: string;
   if (appId) {
     runtimeDir = path.join(process.cwd(), baseDir, appId, runtimeVersion);
-  }
-  else {
+  } else {
     runtimeDir = path.join(process.cwd(), baseDir, runtimeVersion);
   }
-  console.log("runtimeDir", runtimeDir);
 
   // 检查 runtime 目录是否存在
   const exists = await checkUpdateDirectoryExists(runtimeDir);
   if (!exists) {
     if (appId) {
-      throw new Error(`No updates found for app ${appId} with runtime version: ${runtimeVersion}`);
-    }
-    else {
-      throw new Error(`No updates found for runtime version: ${runtimeVersion}`);
+      throw new Error(
+        `No updates found for app ${appId} with runtime version: ${runtimeVersion}`,
+      );
+    } else {
+      throw new Error(
+        `No updates found for runtime version: ${runtimeVersion}`,
+      );
     }
   }
 
   // 读取所有更新目录
   const entries = await fs.readdir(runtimeDir, { withFileTypes: true });
   const directories = entries
-    .filter(entry => entry.isDirectory())
-    .map(entry => entry.name)
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
     .sort()
     .reverse();
 
   if (directories.length === 0) {
     if (appId) {
-      throw new Error(`No updates found for app ${appId} with runtime version: ${runtimeVersion}`);
-    }
-    else {
-      throw new Error(`No updates found for runtime version: ${runtimeVersion}`);
+      throw new Error(
+        `No updates found for app ${appId} with runtime version: ${runtimeVersion}`,
+      );
+    } else {
+      throw new Error(
+        `No updates found for runtime version: ${runtimeVersion}`,
+      );
     }
   }
 
@@ -169,10 +173,10 @@ export async function getMetadataAsync(updateBundlePath: string): Promise<{
 
     if (await checkUpdateDirectoryExists(exupPath)) {
       id = await getFileHashAsync(exupPath);
-    }
-    else {
+    } else {
       // 如果没有 exup 文件，使用 metadata 的哈希
-      id = crypto.createHash("sha256")
+      id = crypto
+        .createHash("sha256")
         .update(JSON.stringify(metadataJson))
         .digest("base64url");
     }
@@ -182,8 +186,7 @@ export async function getMetadataAsync(updateBundlePath: string): Promise<{
       createdAt: new Date().toISOString(),
       id,
     };
-  }
-  catch (error) {
+  } catch (error) {
     throw new Error(`Failed to read metadata: ${error}`);
   }
 }
@@ -222,9 +225,7 @@ export async function getAssetMetadataAsync(params: {
   const stats = await fs.stat(fullPath);
   // 提取资源 key（文件名，不包含扩展名）
   const fileName = path.basename(filePath);
-  const key = isLaunchAsset
-    ? fileName.replace(/\.(js|bundle)$/, "")
-    : fileName;
+  const key = isLaunchAsset ? fileName.replace(/\.(js|bundle)$/, "") : fileName;
 
   const contentType = getMimeType(filePath, isLaunchAsset);
 
@@ -240,7 +241,7 @@ export async function getAssetMetadataAsync(params: {
   return {
     hash,
     key,
-    fileExtension: ext ? `.${ext}` : (isLaunchAsset ? ".bundle" : null),
+    fileExtension: ext ? `.${ext}` : isLaunchAsset ? ".bundle" : null,
     contentType,
     url: assetUrl.toString(),
     size: stats.size,
@@ -250,14 +251,15 @@ export async function getAssetMetadataAsync(params: {
 /**
  * 获取 Expo 配置
  */
-export async function getExpoConfigAsync(updateBundlePath: string): Promise<any> {
+export async function getExpoConfigAsync(
+  updateBundlePath: string,
+): Promise<any> {
   const expoConfigPath = path.join(updateBundlePath, "expoConfig.json");
 
   try {
     const configContent = await fs.readFile(expoConfigPath, "utf-8");
     return JSON.parse(configContent);
-  }
-  catch {
+  } catch {
     // 如果无法读取配置，返回空对象
     return {};
   }
@@ -266,7 +268,9 @@ export async function getExpoConfigAsync(updateBundlePath: string): Promise<any>
 /**
  * 创建回滚指令
  */
-export async function createRollBackDirectiveAsync(updateBundlePath: string): Promise<{
+export async function createRollBackDirectiveAsync(
+  updateBundlePath: string,
+): Promise<{
   type: string;
   parameters: {
     commitTime: string;
@@ -284,8 +288,7 @@ export async function createRollBackDirectiveAsync(updateBundlePath: string): Pr
         commitTime: rollbackData.commitTime || new Date().toISOString(),
       },
     };
-  }
-  catch {
+  } catch {
     throw new Error("Rollback file not found");
   }
 }
@@ -293,13 +296,14 @@ export async function createRollBackDirectiveAsync(updateBundlePath: string): Pr
 /**
  * 检查是否存在 rollback 标记
  */
-export async function checkRollbackExists(updateBundlePath: string): Promise<boolean> {
+export async function checkRollbackExists(
+  updateBundlePath: string,
+): Promise<boolean> {
   const rollbackPath = path.join(updateBundlePath, "rollback");
   try {
     await fs.access(rollbackPath, fs.constants.F_OK);
     return true;
-  }
-  catch {
+  } catch {
     return false;
   }
 }
