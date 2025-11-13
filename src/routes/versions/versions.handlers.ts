@@ -1,9 +1,11 @@
+import AdmZip from "adm-zip";
 import { and, count, desc, eq } from "drizzle-orm";
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import * as HttpStatusCodes from "stoker/http-status-codes";
+import * as tar from "tar";
 
 import type { AppRouteHandler } from "@/lib/types";
 
@@ -349,8 +351,19 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
 
   const allowedExtensions = [".tar.gz", ".zip", ".tgz"];
   const originalFileName = file.name || "bundle";
-  const lastDotIndex = originalFileName.lastIndexOf(".");
-  const extension = lastDotIndex !== -1 ? originalFileName.slice(lastDotIndex).toLowerCase() : "";
+  // 检查 .tar.gz 扩展名（需要特殊处理，因为包含两个点）
+  let extension = "";
+  const lowerFileName = originalFileName.toLowerCase();
+  if (lowerFileName.endsWith(".tar.gz")) {
+    extension = ".tar.gz";
+  }
+  else if (lowerFileName.endsWith(".tgz")) {
+    extension = ".tgz";
+  }
+  else {
+    const lastDotIndex = originalFileName.lastIndexOf(".");
+    extension = lastDotIndex !== -1 ? originalFileName.slice(lastDotIndex).toLowerCase() : "";
+  }
 
   if (!allowedExtensions.includes(extension)) {
     return errorResponse(
@@ -397,10 +410,48 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
 
   await mkdir(storageDir, { recursive: true });
 
+  // 写入压缩包文件
   const filePath = path.join(storageDir, safeFileName);
   await writeFile(filePath, buffer);
 
-  const fileUrl = `/${path.posix.join("uploads", appId, runtimeVersion, sanitizedVersionSegment, timestamp, safeFileName)}`;
+  // 解压文件
+  try {
+    if (extension === ".zip") {
+      // 解压 ZIP 文件
+      const zip = new AdmZip(filePath);
+      zip.extractAllTo(storageDir, true);
+    }
+    else if (extension === ".tar.gz" || extension === ".tgz") {
+      // 解压 TAR.GZ 文件
+      await tar.extract({
+        file: filePath,
+        cwd: storageDir,
+        strip: 0,
+      });
+    }
+
+    // 解压完成后删除压缩包
+    await unlink(filePath);
+  }
+  catch (error) {
+    // 如果解压失败，尝试删除压缩包
+    try {
+      await unlink(filePath);
+    }
+    catch {
+      // 忽略删除错误
+    }
+    return errorResponse(
+      c,
+      "EXTRACTION_ERROR",
+      "文件解压失败",
+      { error: error instanceof Error ? error.message : "Unknown error" },
+      HttpStatusCodes.INTERNAL_SERVER_ERROR,
+    );
+  }
+
+  // fileUrl 固定为 metadata.json
+  const fileUrl = `/${path.posix.join("uploads", appId, runtimeVersion, sanitizedVersionSegment, timestamp, "metadata.json")}`;
 
   // 创建上传记录
   const [uploadRecord] = await db.insert(uploads).values({
