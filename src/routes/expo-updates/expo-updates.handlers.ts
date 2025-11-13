@@ -7,7 +7,7 @@ import path from "node:path";
 import type { AppRouteHandler } from "@/lib/types";
 
 import db from "@/db";
-import { apps, appUsers } from "@/db/schema";
+import { apps, appUsers, userGroupMembers, versions } from "@/db/schema";
 import {
   checkRollbackExists,
   convertSHA256HashToUUID,
@@ -64,8 +64,8 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (
   }
 
   // 提取并验证运行时版本
-  const runtimeVersion =
-    c.req.header("expo-runtime-version") || c.req.query("runtime-version");
+  const runtimeVersion
+    = c.req.header("expo-runtime-version") || c.req.query("runtime-version");
   if (!runtimeVersion || typeof runtimeVersion !== "string") {
     return c.json(
       {
@@ -86,12 +86,14 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (
 
   // 如果提供了 appId，验证应用是否存在
   let app: typeof apps.$inferSelect | null = null;
+  let updateBundlePath: string | undefined;
+
   if (appId) {
-    app = await db.query.apps.findFirst({
+    const foundApp = await db.query.apps.findFirst({
       where: eq(apps.appId, appId),
     });
 
-    if (!app) {
+    if (!foundApp) {
       return c.json(
         {
           success: false,
@@ -103,6 +105,8 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (
         404,
       );
     }
+
+    app = foundApp;
 
     // 如果应用已停用，返回错误
     if (app.status !== "active") {
@@ -119,52 +123,187 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (
     }
 
     // 如果提供了 deviceId，记录或更新设备信息
+    let appUser: typeof appUsers.$inferSelect | null = null;
     if (deviceId) {
-      const existingAppUser = await db.query.appUsers.findFirst({
+      const foundAppUser = await db.query.appUsers.findFirst({
         where: and(eq(appUsers.appId, app.id), eq(appUsers.deviceId, deviceId)),
       });
 
-      if (existingAppUser) {
+      if (foundAppUser) {
+        appUser = foundAppUser;
         // 更新设备信息
         await db
           .update(appUsers)
           .set({
             currentVersion: runtimeVersion,
             lastUpdateAt: new Date(),
-            userId: userId || existingAppUser.userId,
+            userId: userId || foundAppUser.userId,
             status: "online",
             updatedAt: new Date(),
           })
-          .where(eq(appUsers.id, existingAppUser.id));
-      } else {
+          .where(eq(appUsers.id, foundAppUser.id));
+      }
+      else {
         // 创建新设备记录
-        await db.insert(appUsers).values({
+        const [newAppUser] = await db.insert(appUsers).values({
           appId: app.id,
           deviceId,
           userId: userId || null,
           currentVersion: runtimeVersion,
           lastUpdateAt: new Date(),
           status: "online",
-        });
+        }).returning();
+        appUser = newAppUser;
+      }
+    }
+
+    // 按照优先级策略获取版本ID
+    let targetVersionId: string | null = null;
+
+    // 优先级1: 用户级别的目标版本（优先级最高）
+    if (appUser?.targetVersionId) {
+      targetVersionId = appUser.targetVersionId;
+    }
+    else if (appUser) {
+      // 优先级2: 用户组级别的目标版本（优先级中等）
+      // 查找用户所属的用户组
+      const userGroupMember = await db.query.userGroupMembers.findFirst({
+        where: eq(userGroupMembers.appUserId, appUser.id),
+        with: {
+          group: {
+            columns: {
+              id: true,
+              targetVersionId: true,
+              appId: true,
+            },
+          },
+        },
+      });
+
+      if (userGroupMember?.group?.targetVersionId && userGroupMember.group.appId === app.id) {
+        targetVersionId = userGroupMember.group.targetVersionId;
+      }
+    }
+
+    // 优先级3: 应用级别的当前版本（优先级最低）
+    if (!targetVersionId && app.currentVersionId) {
+      targetVersionId = app.currentVersionId;
+    }
+
+    // 如果找到了目标版本ID，使用该版本
+    if (targetVersionId) {
+      // 查询版本信息
+      const version = await db.query.versions.findFirst({
+        where: and(eq(versions.id, targetVersionId), eq(versions.appId, app.id)),
+      });
+
+      if (!version) {
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: "VERSION_NOT_FOUND",
+              message: `Target version ${targetVersionId} not found.`,
+            },
+          },
+          404,
+        );
+      }
+
+      // 检查版本状态
+      if (version.status !== "published") {
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: "VERSION_NOT_PUBLISHED",
+              message: `Version ${version.version} is not published.`,
+            },
+          },
+          404,
+        );
+      }
+
+      // 使用版本的文件URL作为更新包路径
+      // fileUrl 应该是相对于 uploads 目录的路径，或者是绝对路径
+      if (path.isAbsolute(version.fileUrl)) {
+        updateBundlePath = version.fileUrl;
+      }
+      else {
+        updateBundlePath = path.join(process.cwd(), "uploads", version.fileUrl);
+      }
+
+      // 验证更新包路径是否存在
+      try {
+        await fs.access(updateBundlePath, fs.constants.F_OK);
+      }
+      catch {
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: "UPDATE_NOT_FOUND",
+              message: `Update bundle not found at ${updateBundlePath}.`,
+            },
+          },
+          404,
+        );
+      }
+    }
+    else {
+      // 如果没有设置目标版本，使用原来的逻辑：根据 runtimeVersion 获取最新版本
+      try {
+        updateBundlePath = await getLatestUpdateBundlePathForRuntimeVersionAsync(
+          runtimeVersion,
+          "uploads",
+          appId || undefined,
+        );
+      }
+      catch (error: any) {
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: "UPDATE_NOT_FOUND",
+              message: error.message,
+            },
+          },
+          404,
+        );
       }
     }
   }
+  else {
+    // 如果没有提供 appId，使用原来的逻辑
+    try {
+      updateBundlePath = await getLatestUpdateBundlePathForRuntimeVersionAsync(
+        runtimeVersion,
+        "uploads",
+        appId || undefined,
+      );
+    }
+    catch (error: any) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "UPDATE_NOT_FOUND",
+            message: error.message,
+          },
+        },
+        404,
+      );
+    }
+  }
 
-  // 查找最新更新包（如果提供了 appId，使用 appId 查找）
-  let updateBundlePath: string;
-  try {
-    updateBundlePath = await getLatestUpdateBundlePathForRuntimeVersionAsync(
-      runtimeVersion,
-      "uploads",
-      appId || undefined,
-    );
-  } catch (error: any) {
+  // 确保 updateBundlePath 已赋值
+  if (!updateBundlePath) {
     return c.json(
       {
         success: false,
         error: {
           code: "UPDATE_NOT_FOUND",
-          message: error.message,
+          message: "No update bundle path determined.",
         },
       },
       404,
@@ -173,8 +312,8 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (
 
   try {
     // 读取元数据
-    const { metadataJson, createdAt, id } =
-      await getMetadataAsync(updateBundlePath);
+    const { metadataJson, createdAt, id }
+      = await getMetadataAsync(updateBundlePath);
     const currentUpdateId = convertSHA256HashToUUID(id);
 
     // Protocol version 1 特有功能：检查 rollback 和 no update available
@@ -203,9 +342,10 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (
       if (clientCurrentUpdateId === currentUpdateId) {
         return await putNoUpdateAvailableInResponseAsync(c, protocolVersion);
       }
-    } else if (
-      protocolVersion === 0 &&
-      clientCurrentUpdateId === currentUpdateId
+    }
+    else if (
+      protocolVersion === 0
+      && clientCurrentUpdateId === currentUpdateId
     ) {
       // Protocol version 0 不支持 noUpdateAvailable 指令
       // 但是我们可以跳过构建 manifest，直接返回现有更新
@@ -288,7 +428,8 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (
       headers: c.res.headers,
       status: 200,
     });
-  } catch (error: any) {
+  }
+  catch (error: any) {
     return c.json(
       {
         success: false,
@@ -496,7 +637,7 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
         success: false,
         error: {
           code: "INVALID_PLATFORM",
-          message: 'No platform provided. Expected "ios" or "android".',
+          message: "No platform provided. Expected \"ios\" or \"android\".",
         },
       },
       400,
@@ -561,7 +702,8 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
       "uploads",
       appId || undefined,
     );
-  } catch (error: any) {
+  }
+  catch (error: any) {
     return c.json(
       {
         success: false,
@@ -580,7 +722,8 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
   try {
     const { metadataJson: meta } = await getMetadataAsync(updateBundlePath);
     metadataJson = meta;
-  } catch (error: any) {
+  }
+  catch (error: any) {
     return c.json(
       {
         success: false,
@@ -597,11 +740,13 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
   let assetPath: string;
   if (path.isAbsolute(assetName)) {
     assetPath = assetName;
-  } else {
+  }
+  else {
     // 如果是相对路径，尝试相对于更新包路径或工作目录
     if (assetName.startsWith(updateBundlePath)) {
       assetPath = path.resolve(assetName);
-    } else {
+    }
+    else {
       // 尝试在更新包目录中查找
       assetPath = path.join(updateBundlePath, assetName);
     }
@@ -612,7 +757,8 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
   // 检查资源是否存在
   try {
     await fs.access(assetPath, fs.constants.F_OK);
-  } catch {
+  }
+  catch {
     return c.json(
       {
         success: false,
@@ -631,20 +777,22 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
     (asset: any) => asset.path === relativePath,
   );
 
-  const isLaunchAsset =
-    metadataJson.fileMetadata[platform].bundle === relativePath;
+  const isLaunchAsset
+    = metadataJson.fileMetadata[platform].bundle === relativePath;
 
   // 确定 MIME 类型
   let contentType: string;
   if (isLaunchAsset) {
     contentType = "application/javascript";
-  } else if (assetMetadata?.ext) {
+  }
+  else if (assetMetadata?.ext) {
     const ext = assetMetadata.ext.startsWith(".")
       ? assetMetadata.ext
       : `.${assetMetadata.ext}`;
     const mimeType = mime.getType(ext);
     contentType = mimeType || "application/octet-stream";
-  } else {
+  }
+  else {
     const ext = path.extname(assetPath);
     const mimeType = mime.getType(ext);
     contentType = mimeType || "application/octet-stream";
@@ -660,7 +808,8 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
       headers: c.res.headers,
       status: 200,
     });
-  } catch (error: any) {
+  }
+  catch (error: any) {
     return c.json(
       {
         success: false,
