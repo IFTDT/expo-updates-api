@@ -47,25 +47,40 @@ export async function getAppStats(c: Parameters<AppRouteHandler<GetAppStatsRoute
         columns: {
           id: true,
           version: true,
+          build: true,
+          runtimeVersion: true,
         },
       },
     },
   });
 
-  // 获取版本分布
-  const versionCounts = new Map<string, number>();
+  // 获取版本分布（按版本号分组，但保留 build 和 runtimeVersion 信息）
+  const versionCounts = new Map<string, { count: number; build: string; runtimeVersion: string }>();
   allUsers.forEach((user) => {
     if (user.currentVersion?.version) {
-      versionCounts.set(user.currentVersion.version, (versionCounts.get(user.currentVersion.version) || 0) + 1);
+      const versionKey = user.currentVersion.version;
+      const existing = versionCounts.get(versionKey);
+      if (existing) {
+        existing.count += 1;
+      }
+      else {
+        versionCounts.set(versionKey, {
+          count: 1,
+          build: user.currentVersion.build,
+          runtimeVersion: user.currentVersion.runtimeVersion,
+        });
+      }
     }
   });
 
   const totalUsers = allUsers.length;
   const versionDistribution = Array.from(versionCounts.entries())
-    .map(([version, count]) => ({
+    .map(([version, data]) => ({
       version,
-      count,
-      percentage: totalUsers > 0 ? (count / totalUsers) * 100 : 0,
+      build: data.build,
+      runtimeVersion: data.runtimeVersion,
+      count: data.count,
+      percentage: totalUsers > 0 ? (data.count / totalUsers) * 100 : 0,
     }))
     .sort((a, b) => b.count - a.count);
 
@@ -160,25 +175,40 @@ export async function getVersionDistribution(c: Parameters<AppRouteHandler<GetVe
         columns: {
           id: true,
           version: true,
+          build: true,
+          runtimeVersion: true,
         },
       },
     },
   });
 
-  // 统计版本分布
-  const versionCounts = new Map<string, number>();
+  // 统计版本分布（按版本号分组，但保留 build 和 runtimeVersion 信息）
+  const versionCounts = new Map<string, { count: number; build: string; runtimeVersion: string }>();
   allUsers.forEach((user) => {
     if (user.currentVersion?.version) {
-      versionCounts.set(user.currentVersion.version, (versionCounts.get(user.currentVersion.version) || 0) + 1);
+      const versionKey = user.currentVersion.version;
+      const existing = versionCounts.get(versionKey);
+      if (existing) {
+        existing.count += 1;
+      }
+      else {
+        versionCounts.set(versionKey, {
+          count: 1,
+          build: user.currentVersion.build,
+          runtimeVersion: user.currentVersion.runtimeVersion,
+        });
+      }
     }
   });
 
   const totalUsers = allUsers.length;
   const distribution = Array.from(versionCounts.entries())
-    .map(([version, count]) => ({
+    .map(([version, data]) => ({
       version,
-      count,
-      percentage: totalUsers > 0 ? (count / totalUsers) * 100 : 0,
+      build: data.build,
+      runtimeVersion: data.runtimeVersion,
+      count: data.count,
+      percentage: totalUsers > 0 ? (data.count / totalUsers) * 100 : 0,
     }))
     .sort((a, b) => b.count - a.count);
 

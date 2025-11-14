@@ -33,6 +33,8 @@ export const getAppStats = createRoute({
           }),
           versionDistribution: z.array(z.object({
             version: z.string(),
+            build: z.string(),
+            runtimeVersion: z.string(),
             count: z.number(),
             percentage: z.number(),
           })),
@@ -66,6 +68,8 @@ export const getVersionDistribution = createRoute({
         success: z.literal(true),
         data: z.array(z.object({
           version: z.string(),
+          build: z.string(),
+          runtimeVersion: z.string(),
           count: z.number(),
           percentage: z.number(),
         })),
