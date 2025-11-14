@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, or } from "drizzle-orm";
 import FormData from "form-data";
 import mime from "mime";
 import fs from "node:fs/promises";
@@ -7,7 +7,7 @@ import path from "node:path";
 import type { AppRouteHandler } from "@/lib/types";
 
 import db from "@/db";
-import { apps, appUsers, userGroupMembers, versions } from "@/db/schema";
+import { apps, appUsers, updateTasks, userGroupMembers, versions } from "@/db/schema";
 import {
   checkRollbackExists,
   convertSHA256HashToUUID,
@@ -102,7 +102,7 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (
     );
   }
 
-  const { updateBundlePath } = bundleResult;
+  const { updateBundlePath, targetVersionId, appId: resolvedAppId } = bundleResult;
 
   try {
     // 读取元数据
@@ -221,12 +221,35 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (
     const buffer = form.getBuffer();
     const body = new Uint8Array(buffer);
 
+    // 成功返回更新，更新统计信息
+    if (targetVersionId && resolvedAppId) {
+      const { appUserId } = bundleResult;
+      await updateTaskStats(targetVersionId, resolvedAppId, true, appUserId || null);
+    }
+
     return new Response(body, {
       headers: c.res.headers,
       status: 200,
     });
   }
   catch (error: any) {
+    // 处理失败，更新失败计数
+    if (targetVersionId && resolvedAppId) {
+      // 尝试获取 appUserId（如果存在）
+      let appUserIdForStats: string | null = null;
+      if (deviceId && resolvedAppId) {
+        try {
+          const foundUser = await db.query.appUsers.findFirst({
+            where: and(eq(appUsers.appId, resolvedAppId), eq(appUsers.deviceId, deviceId)),
+          });
+          appUserIdForStats = foundUser?.id || null;
+        }
+        catch {
+          // 忽略错误
+        }
+      }
+      await updateTaskStats(targetVersionId, resolvedAppId, false, appUserIdForStats);
+    }
     return c.json(
       {
         success: false,
@@ -605,6 +628,9 @@ interface ResolveUpdateBundlePathParams {
 interface ResolveUpdateBundlePathSuccess {
   ok: true;
   updateBundlePath: string;
+  targetVersionId?: string | null;
+  appId?: string;
+  appUserId?: string | null;
 }
 
 interface ResolveUpdateBundlePathFailure {
@@ -633,7 +659,12 @@ async function resolveUpdateBundlePath(
           runtimeVersion,
           "uploads",
         );
-      return { ok: true, updateBundlePath };
+      return {
+        ok: true,
+        updateBundlePath,
+        targetVersionId: null,
+        appId: undefined,
+      };
     }
     catch (error: any) {
       return {
@@ -663,6 +694,18 @@ async function resolveUpdateBundlePath(
   }
 
   if (app.status !== "active") {
+    // 如果 trackDevice 为 true，记录更新失败
+    // 注意：此时可能还没有 appUser，需要先查询
+    if (trackDevice && app.currentVersionId) {
+      let appUserIdForStats: string | null = null;
+      if (deviceId) {
+        const foundUser = await db.query.appUsers.findFirst({
+          where: and(eq(appUsers.appId, app.id), eq(appUsers.deviceId, deviceId)),
+        });
+        appUserIdForStats = foundUser?.id || null;
+      }
+      await updateTaskStats(app.currentVersionId, app.id, false, appUserIdForStats);
+    }
     return {
       ok: false,
       status: 403,
@@ -722,6 +765,10 @@ async function resolveUpdateBundlePath(
     });
 
     if (!version) {
+      // 如果 trackDevice 为 true，记录更新失败
+      if (trackDevice) {
+        await updateTaskStats(targetVersionId, app.id, false, appUser?.id || null);
+      }
       return {
         ok: false,
         status: 404,
@@ -733,6 +780,10 @@ async function resolveUpdateBundlePath(
     }
 
     if (version.status !== "published") {
+      // 如果 trackDevice 为 true，记录更新失败
+      if (trackDevice) {
+        await updateTaskStats(targetVersionId, app.id, false, appUser?.id || null);
+      }
       return {
         ok: false,
         status: 404,
@@ -751,6 +802,10 @@ async function resolveUpdateBundlePath(
       await fs.access(targetUpdateBundlePath, fs.constants.F_OK);
     }
     catch {
+      // 如果 trackDevice 为 true，记录更新失败
+      if (trackDevice) {
+        await updateTaskStats(targetVersionId, app.id, false, appUser?.id || null);
+      }
       return {
         ok: false,
         status: 404,
@@ -781,7 +836,7 @@ async function resolveUpdateBundlePath(
     }
     else {
       // 插入新用户
-      await db
+      const [newUser] = await db
         .insert(appUsers)
         .values({
           appId: app.id,
@@ -792,13 +847,21 @@ async function resolveUpdateBundlePath(
           currentVersionId: targetVersionId || null,
           lastUpdateAt: new Date(),
           status: "online",
-        });
+        })
+        .returning();
+      appUser = newUser;
     }
   }
 
   // 如果找到了目标版本，返回对应的 updateBundlePath
-  if (targetUpdateBundlePath) {
-    return { ok: true, updateBundlePath: targetUpdateBundlePath };
+  if (targetUpdateBundlePath && targetVersionId) {
+    return {
+      ok: true,
+      updateBundlePath: targetUpdateBundlePath,
+      targetVersionId,
+      appId: app.id,
+      appUserId: appUser?.id || null,
+    };
   }
 
   try {
@@ -808,9 +871,22 @@ async function resolveUpdateBundlePath(
         "uploads",
         appId || undefined,
       );
-    return { ok: true, updateBundlePath };
+    return {
+      ok: true,
+      updateBundlePath,
+      targetVersionId: targetVersionId || null,
+      appId: app.id,
+      appUserId: appUser?.id || null,
+    };
   }
   catch (error: any) {
+    // 如果 trackDevice 为 true，记录更新失败
+    if (trackDevice) {
+      const versionId = targetVersionId || app.currentVersionId;
+      if (versionId) {
+        await updateTaskStats(versionId, app.id, false, appUser?.id || null);
+      }
+    }
     return {
       ok: false,
       status: 404,
@@ -819,5 +895,111 @@ async function resolveUpdateBundlePath(
         message: error.message,
       },
     };
+  }
+}
+
+/**
+ * 更新更新任务的统计信息
+ * @param versionId 版本ID
+ * @param appId 应用ID
+ * @param isSuccess 是否成功
+ * @param appUserId 应用用户ID（可选，用于记录成功/失败的用户列表）
+ */
+async function updateTaskStats(
+  versionId: string,
+  appId: string,
+  isSuccess: boolean,
+  appUserId?: string | null,
+): Promise<void> {
+  try {
+    // 查找指向该版本的待处理或进行中的更新任务
+    const tasks = await db.query.updateTasks.findMany({
+      where: and(
+        eq(updateTasks.versionId, versionId),
+        eq(updateTasks.appId, appId),
+        or(
+          eq(updateTasks.status, "pending"),
+          eq(updateTasks.status, "in_progress"),
+        ),
+      ),
+      orderBy: [desc(updateTasks.createdAt)],
+      limit: 1, // 只更新最新的任务
+    });
+
+    if (tasks.length > 0) {
+      const task = tasks[0];
+      const currentSuccessCount = task.successCount || 0;
+      const currentFailureCount = task.failureCount || 0;
+
+      // 解析现有的成功和失败用户ID列表
+      let successUserIds: string[] = [];
+      let failureUserIds: string[] = [];
+
+      if (task.successUserIds) {
+        try {
+          successUserIds = JSON.parse(task.successUserIds) as string[];
+        }
+        catch {
+          successUserIds = [];
+        }
+      }
+
+      if (task.failureUserIds) {
+        try {
+          failureUserIds = JSON.parse(task.failureUserIds) as string[];
+        }
+        catch {
+          failureUserIds = [];
+        }
+      }
+
+      // 如果提供了 appUserId，检查是否已记录（去重逻辑）
+      // 同一个版本、同一个用户只记录一次，不论成功失败
+      let shouldUpdate = true;
+      if (appUserId) {
+        // 如果用户已经在成功列表或失败列表中，则不重复记录
+        if (successUserIds.includes(appUserId) || failureUserIds.includes(appUserId)) {
+          shouldUpdate = false;
+        }
+        else {
+          // 用户未记录过，添加到对应的列表
+          if (isSuccess) {
+            successUserIds.push(appUserId);
+          }
+          else {
+            failureUserIds.push(appUserId);
+          }
+        }
+      }
+
+      if (shouldUpdate) {
+        const updateData: Partial<typeof updateTasks.$inferInsert> = {
+          updatedAt: new Date(),
+        };
+
+        if (appUserId) {
+          // 更新用户ID列表
+          updateData.successUserIds = JSON.stringify(successUserIds);
+          updateData.failureUserIds = JSON.stringify(failureUserIds);
+          // 更新计数（基于列表长度）
+          updateData.successCount = successUserIds.length;
+          updateData.failureCount = failureUserIds.length;
+        }
+        else {
+          // 如果没有 appUserId，只更新计数
+          updateData.successCount = isSuccess ? currentSuccessCount + 1 : currentSuccessCount;
+          updateData.failureCount = isSuccess ? currentFailureCount : currentFailureCount + 1;
+        }
+
+        await db
+          .update(updateTasks)
+          .set(updateData)
+          .where(eq(updateTasks.id, task.id));
+      }
+    }
+  }
+  catch (error) {
+    // 静默失败，不影响主流程
+    console.error("Failed to update task stats:", error);
   }
 }

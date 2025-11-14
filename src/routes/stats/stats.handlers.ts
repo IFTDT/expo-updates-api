@@ -1,16 +1,17 @@
-import { and, count, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, count, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 
-import db from "@/db";
-import { apps, appUsers, versions, updateTasks, operationLogs } from "@/db/schema";
-import { errorResponse, successResponse } from "@/lib/response";
 import type { AppRouteHandler } from "@/lib/types";
+
+import db from "@/db";
+import { apps, appUsers, updateTasks, versions } from "@/db/schema";
+import { errorResponse, successResponse } from "@/lib/response";
 
 import type { GetAppStatsRoute, GetUpdateSuccessRateRoute, GetVersionDistributionRoute } from "./stats.routes";
 
-export const getAppStats = async (c: Parameters<AppRouteHandler<GetAppStatsRoute>>[0]) => {
+export async function getAppStats(c: Parameters<AppRouteHandler<GetAppStatsRoute>>[0]) {
   const { appId } = c.req.valid("param");
-  const query = c.req.valid("query");
+  // const query = c.req.valid("query"); // 预留，用于后续时间范围查询
 
   // 验证应用是否存在
   const app = await db.query.apps.findFirst({
@@ -27,27 +28,35 @@ export const getAppStats = async (c: Parameters<AppRouteHandler<GetAppStatsRoute
     );
   }
 
-  // 构建时间范围条件
-  const conditions = [eq(operationLogs.appId, appId)];
-  if (query.startDate) {
-    conditions.push(gte(operationLogs.createdAt, new Date(query.startDate)));
-  }
-  if (query.endDate) {
-    conditions.push(lte(operationLogs.createdAt, new Date(query.endDate)));
-  }
-  const where = and(...conditions);
+  // 构建时间范围条件（预留，用于后续 operationLogs 查询）
+  // const conditions = [eq(operationLogs.appId, appId)];
+  // if (query.startDate) {
+  //   conditions.push(gte(operationLogs.createdAt, new Date(query.startDate)));
+  // }
+  // if (query.endDate) {
+  //   conditions.push(lte(operationLogs.createdAt, new Date(query.endDate)));
+  // }
+  // const where = and(...conditions);
 
-  // 获取所有用户
+  // 获取所有用户（关联版本信息）
   const allUsers = await db.query.appUsers.findMany({
     where: eq(appUsers.appId, appId),
-    columns: { currentVersion: true, status: true },
+    columns: { status: true },
+    with: {
+      currentVersion: {
+        columns: {
+          id: true,
+          version: true,
+        },
+      },
+    },
   });
 
   // 获取版本分布
   const versionCounts = new Map<string, number>();
   allUsers.forEach((user) => {
-    if (user.currentVersion) {
-      versionCounts.set(user.currentVersion, (versionCounts.get(user.currentVersion) || 0) + 1);
+    if (user.currentVersion?.version) {
+      versionCounts.set(user.currentVersion.version, (versionCounts.get(user.currentVersion.version) || 0) + 1);
     }
   });
 
@@ -71,11 +80,37 @@ export const getAppStats = async (c: Parameters<AppRouteHandler<GetAppStatsRoute
   const totalUpdates = successCount + failureCount;
   const updateSuccessRate = totalUpdates > 0 ? (successCount / totalUpdates) * 100 : 0;
 
-  // 获取活跃版本数
-  const activeVersions = await db.query.versions.findMany({
-    where: and(eq(versions.appId, appId), eq(versions.status, "published")),
-    columns: { id: true },
-  });
+  // 获取活跃版本数（只统计有用户使用的已发布版本）
+  // 先查询所有有用户的版本ID
+  const versionsWithUsers = await db
+    .select({
+      versionId: appUsers.currentVersionId,
+      userCount: count(),
+    })
+    .from(appUsers)
+    .where(and(
+      eq(appUsers.appId, appId),
+      sql`${appUsers.currentVersionId} IS NOT NULL`,
+    ))
+    .groupBy(appUsers.currentVersionId);
+
+  const versionIdsWithUsers = versionsWithUsers
+    .map(v => v.versionId)
+    .filter((id): id is string => id !== null);
+
+  // 查询这些版本ID对应的已发布版本
+  let activeVersionsCount = 0;
+  if (versionIdsWithUsers.length > 0) {
+    const activeVersions = await db.query.versions.findMany({
+      where: and(
+        eq(versions.appId, appId),
+        eq(versions.status, "published"),
+        inArray(versions.id, versionIdsWithUsers),
+      ),
+      columns: { id: true },
+    });
+    activeVersionsCount = activeVersions.length;
+  }
 
   // 获取更新时间线（简化版）
   const updateTimeline: Array<{ date: string; count: number }> = [];
@@ -90,7 +125,7 @@ export const getAppStats = async (c: Parameters<AppRouteHandler<GetAppStatsRoute
       updateSuccessRate,
       successCount,
       failureCount,
-      activeVersions: activeVersions.length,
+      activeVersions: activeVersionsCount,
       totalUpdates,
     },
     versionDistribution,
@@ -99,7 +134,7 @@ export const getAppStats = async (c: Parameters<AppRouteHandler<GetAppStatsRoute
   });
 };
 
-export const getVersionDistribution = async (c: Parameters<AppRouteHandler<GetVersionDistributionRoute>>[0]) => {
+export async function getVersionDistribution(c: Parameters<AppRouteHandler<GetVersionDistributionRoute>>[0]) {
   const { appId } = c.req.valid("param");
 
   // 验证应用是否存在
@@ -117,17 +152,24 @@ export const getVersionDistribution = async (c: Parameters<AppRouteHandler<GetVe
     );
   }
 
-  // 获取所有用户
+  // 获取所有用户（关联版本信息）
   const allUsers = await db.query.appUsers.findMany({
     where: eq(appUsers.appId, appId),
-    columns: { currentVersion: true },
+    with: {
+      currentVersion: {
+        columns: {
+          id: true,
+          version: true,
+        },
+      },
+    },
   });
 
   // 统计版本分布
   const versionCounts = new Map<string, number>();
   allUsers.forEach((user) => {
-    if (user.currentVersion) {
-      versionCounts.set(user.currentVersion, (versionCounts.get(user.currentVersion) || 0) + 1);
+    if (user.currentVersion?.version) {
+      versionCounts.set(user.currentVersion.version, (versionCounts.get(user.currentVersion.version) || 0) + 1);
     }
   });
 
@@ -143,7 +185,7 @@ export const getVersionDistribution = async (c: Parameters<AppRouteHandler<GetVe
   return successResponse(c, distribution);
 };
 
-export const getUpdateSuccessRate = async (c: Parameters<AppRouteHandler<GetUpdateSuccessRateRoute>>[0]) => {
+export async function getUpdateSuccessRate(c: Parameters<AppRouteHandler<GetUpdateSuccessRateRoute>>[0]) {
   const { appId } = c.req.valid("param");
   const query = c.req.valid("query");
 
@@ -190,4 +232,3 @@ export const getUpdateSuccessRate = async (c: Parameters<AppRouteHandler<GetUpda
     totalCount,
   });
 };
-
