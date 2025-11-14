@@ -70,7 +70,7 @@ export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
   const formattedItems = await Promise.all(items.map(async (item) => {
     // 统计使用该版本的用户数
     const userCount = await db.query.appUsers.findMany({
-      where: eq(appUsers.currentVersion, item.version),
+      where: eq(appUsers.currentVersionId, item.id),
       columns: { id: true },
     });
 
@@ -144,7 +144,7 @@ export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
 
   // 统计使用该版本的用户数
   const userCount = await db.query.appUsers.findMany({
-    where: eq(appUsers.currentVersion, version.version),
+    where: eq(appUsers.currentVersionId, version.id),
     columns: { id: true },
   });
 
@@ -502,7 +502,11 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
 
   // 更新应用的当前版本
   await db.update(apps)
-    .set({ currentVersion: version, updatedAt: new Date() })
+    .set({
+      currentVersionId: newVersion.id,
+      currentVersion: version,
+      updatedAt: new Date(),
+    })
     .where(eq(apps.id, appId));
 
   return successResponse(
@@ -625,7 +629,11 @@ export async function createFromUrl(c: Parameters<AppRouteHandler<CreateFromUrlR
   }
 
   await db.update(apps)
-    .set({ currentVersion: data.version, updatedAt: new Date() })
+    .set({
+      currentVersionId: newVersion.id,
+      currentVersion: data.version,
+      updatedAt: new Date(),
+    })
     .where(eq(apps.id, appId));
 
   return successResponse(
@@ -707,7 +715,11 @@ export async function publish(c: Parameters<AppRouteHandler<PublishRoute>>[0]) {
 
   // 更新应用的当前版本
   await db.update(apps)
-    .set({ currentVersion: version.version, updatedAt: new Date() })
+    .set({
+      currentVersionId: id,
+      currentVersion: version.version,
+      updatedAt: new Date(),
+    })
     .where(eq(apps.id, appId));
 
   return successResponse(c, {
@@ -783,7 +795,11 @@ export async function rollback(c: Parameters<AppRouteHandler<RollbackRoute>>[0])
 
   // 更新应用的当前版本为目标版本
   await db.update(apps)
-    .set({ currentVersion: toVersion.version, updatedAt: new Date() })
+    .set({
+      currentVersionId: data.toVersionId,
+      currentVersion: toVersion.version,
+      updatedAt: new Date(),
+    })
     .where(eq(apps.id, appId));
 
   return successResponse(c, {
