@@ -34,7 +34,14 @@ export const list = createRoute({
             id: z.string(),
             deviceId: z.string(),
             userId: z.string().nullable().optional(),
-            currentVersion: z.string().nullable().optional(),
+            platform: z.string().nullable().optional(),
+            currentVersionId: z.string().nullable().optional(),
+            currentVersion: z.object({
+              id: z.string(),
+              version: z.string(),
+              build: z.string(),
+              runtimeVersion: z.string(),
+            }).nullable().optional(),
             lastUpdateAt: z.date().nullable().optional(),
             deviceInfo: z.record(z.string(), z.unknown()).openapi({
               type: "object",
@@ -78,7 +85,12 @@ export const getOne = createRoute({
           id: z.string(),
           deviceId: z.string(),
           userId: z.string().nullable().optional(),
-          currentVersion: z.string().nullable().optional(),
+          currentVersionId: z.string().nullable().optional(),
+          currentVersion: z.object({
+            id: z.string(),
+            version: z.string(),
+            runtimeVersion: z.string(),
+          }).nullable().optional(),
           lastUpdateAt: z.date().nullable().optional(),
           deviceInfo: z.record(z.string(), z.unknown()).openapi({
             type: "object",

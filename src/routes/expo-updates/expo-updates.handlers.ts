@@ -88,6 +88,7 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (
     appId,
     deviceId,
     userId,
+    platform,
     trackDevice: true,
   });
 
@@ -471,6 +472,8 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
     appId,
     deviceId,
     userId,
+    platform,
+    trackDevice: false,
   });
 
   if (!bundleResult.ok) {
@@ -595,6 +598,7 @@ interface ResolveUpdateBundlePathParams {
   appId?: string | null;
   deviceId?: string | null;
   userId?: string | null;
+  platform?: string | null;
   trackDevice?: boolean;
 }
 
@@ -619,7 +623,7 @@ type ResolveUpdateBundlePathResult
 async function resolveUpdateBundlePath(
   params: ResolveUpdateBundlePathParams,
 ): Promise<ResolveUpdateBundlePathResult> {
-  const { runtimeVersion, appId, deviceId, userId, trackDevice = false }
+  const { runtimeVersion, appId, deviceId, userId, platform, trackDevice = false }
     = params;
 
   if (!appId) {
@@ -669,43 +673,16 @@ async function resolveUpdateBundlePath(
     };
   }
 
+  // 先查询用户（如果存在），用于确定 targetVersionId
   let appUser: typeof appUsers.$inferSelect | null = null;
   if (deviceId) {
-    const foundAppUser = await db.query.appUsers.findFirst({
+    const foundUser = await db.query.appUsers.findFirst({
       where: and(eq(appUsers.appId, app.id), eq(appUsers.deviceId, deviceId)),
     });
-
-    if (foundAppUser) {
-      appUser = foundAppUser;
-      if (trackDevice) {
-        await db
-          .update(appUsers)
-          .set({
-            currentVersion: runtimeVersion,
-            lastUpdateAt: new Date(),
-            userId: userId || foundAppUser.userId,
-            status: "online",
-            updatedAt: new Date(),
-          })
-          .where(eq(appUsers.id, foundAppUser.id));
-      }
-    }
-    else if (trackDevice) {
-      const [newAppUser] = await db
-        .insert(appUsers)
-        .values({
-          appId: app.id,
-          deviceId,
-          userId: userId || null,
-          currentVersion: runtimeVersion,
-          lastUpdateAt: new Date(),
-          status: "online",
-        })
-        .returning();
-      appUser = newAppUser;
-    }
+    appUser = foundUser ?? null;
   }
 
+  // 确定 targetVersionId
   let targetVersionId: string | null = null;
 
   if (appUser?.targetVersionId) {
@@ -737,6 +714,8 @@ async function resolveUpdateBundlePath(
     targetVersionId = app.currentVersionId;
   }
 
+  // 获取目标版本信息
+  let targetUpdateBundlePath: string | null = null;
   if (targetVersionId) {
     const version = await db.query.versions.findFirst({
       where: and(eq(versions.id, targetVersionId), eq(versions.appId, app.id)),
@@ -764,12 +743,12 @@ async function resolveUpdateBundlePath(
       };
     }
 
-    const updateBundlePath = path.isAbsolute(version.fileUrl)
+    targetUpdateBundlePath = path.isAbsolute(version.fileUrl)
       ? path.join(process.cwd(), version.fileUrl)
       : path.join(process.cwd(), "uploads", version.fileUrl);
 
     try {
-      await fs.access(updateBundlePath, fs.constants.F_OK);
+      await fs.access(targetUpdateBundlePath, fs.constants.F_OK);
     }
     catch {
       return {
@@ -777,12 +756,49 @@ async function resolveUpdateBundlePath(
         status: 404,
         error: {
           code: "UPDATE_NOT_FOUND",
-          message: `Update bundle not found at ${updateBundlePath}.`,
+          message: `Update bundle not found at ${targetUpdateBundlePath}.`,
         },
       };
     }
+  }
 
-    return { ok: true, updateBundlePath };
+  // 更新或插入用户信息（在确定 targetVersionId 之后）
+  if (trackDevice && deviceId) {
+    if (appUser) {
+      // 更新现有用户
+      await db
+        .update(appUsers)
+        .set({
+          // 如果有目标版本，使用目标版本的ID，否则保持原值
+          currentVersionId: targetVersionId || appUser.currentVersionId,
+          lastUpdateAt: new Date(),
+          userId: userId || appUser.userId,
+          platform: platform || appUser.platform,
+          status: "online",
+          updatedAt: new Date(),
+        })
+        .where(eq(appUsers.id, appUser.id));
+    }
+    else {
+      // 插入新用户
+      await db
+        .insert(appUsers)
+        .values({
+          appId: app.id,
+          deviceId,
+          userId: userId || null,
+          platform: platform || null,
+          // 如果有目标版本，使用目标版本的ID
+          currentVersionId: targetVersionId || null,
+          lastUpdateAt: new Date(),
+          status: "online",
+        });
+    }
+  }
+
+  // 如果找到了目标版本，返回对应的 updateBundlePath
+  if (targetUpdateBundlePath) {
+    return { ok: true, updateBundlePath: targetUpdateBundlePath };
   }
 
   try {

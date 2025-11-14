@@ -81,6 +81,10 @@ export const appUsersRelations = relations(appUsers, ({ one, many }) => ({
     fields: [appUsers.appId],
     references: [apps.id],
   }),
+  currentVersion: one(versions, {
+    fields: [appUsers.currentVersionId],
+    references: [versions.id],
+  }),
   targetVersion: one(versions, {
     fields: [appUsers.targetVersionId],
     references: [versions.id],

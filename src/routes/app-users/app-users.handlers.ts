@@ -1,14 +1,15 @@
 import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 
-import db from "@/db";
-import { apps, appUsers, versions, updateTasks } from "@/db/schema";
-import { paginationResponse, errorResponse, successResponse } from "@/lib/response";
 import type { AppRouteHandler } from "@/lib/types";
+
+import db from "@/db";
+import { apps, appUsers, updateTasks, versions } from "@/db/schema";
+import { errorResponse, paginationResponse, successResponse } from "@/lib/response";
 
 import type { BatchUpdateRoute, GetOneRoute, ListRoute, RollbackRoute, SetTargetVersionRoute, UpdateVersionRoute } from "./app-users.routes";
 
-export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
+export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
   const { appId } = c.req.valid("param");
   const query = c.req.valid("query");
   const page = query.page || 1;
@@ -38,7 +39,14 @@ export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
   }
 
   if (query.version) {
-    conditions.push(eq(appUsers.currentVersion, query.version));
+    conditions.push(eq(appUsers.currentVersionId, query.version));
+  }
+
+  if (query.platform) {
+    // 大小写不敏感的平台查询
+    conditions.push(
+      sql`LOWER(${appUsers.platform}) = LOWER(${query.platform})`,
+    );
   }
 
   if (query.search) {
@@ -58,12 +66,22 @@ export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
   const totalResult = await db.select({ count: count() }).from(appUsers).where(where);
   const total = totalResult[0]?.count || 0;
 
-  // 获取列表
+  // 获取列表（关联版本信息）
   const items = await db.query.appUsers.findMany({
     where,
     limit,
     offset,
     orderBy: [desc(appUsers.lastUpdateAt)],
+    with: {
+      currentVersion: {
+        columns: {
+          id: true,
+          version: true,
+          build: true,
+          runtimeVersion: true,
+        },
+      },
+    },
   });
 
   // 格式化响应
@@ -82,7 +100,16 @@ export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
       id: item.id,
       deviceId: item.deviceId,
       userId: item.userId || undefined,
-      currentVersion: item.currentVersion || undefined,
+      platform: item.platform || undefined,
+      currentVersionId: item.currentVersionId || undefined,
+      currentVersion: item.currentVersion
+        ? {
+            id: item.currentVersion.id,
+            version: item.currentVersion.version,
+            build: item.currentVersion.build,
+            runtimeVersion: item.currentVersion.runtimeVersion,
+          }
+        : undefined,
       lastUpdateAt: item.lastUpdateAt || undefined,
       deviceInfo,
       status: item.status,
@@ -92,14 +119,14 @@ export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
   // 获取统计信息
   const allUsers = await db.query.appUsers.findMany({
     where: eq(appUsers.appId, appId),
-    columns: { status: true, currentVersion: true },
+    columns: { status: true, currentVersionId: true },
   });
 
   const stats = {
     total: allUsers.length,
     online: allUsers.filter(u => u.status === "online").length,
     offline: allUsers.filter(u => u.status === "offline").length,
-    versions: new Set(allUsers.map(u => u.currentVersion).filter(Boolean)).size,
+    versions: new Set(allUsers.map(u => u.currentVersionId).filter(Boolean)).size,
   };
 
   return successResponse(c, {
@@ -112,13 +139,23 @@ export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
     },
     stats,
   });
-};
+}
 
-export const getOne = async (c: Parameters<AppRouteHandler<GetOneRoute>>[0]) => {
+export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
   const { appId, id } = c.req.valid("param");
 
   const user = await db.query.appUsers.findFirst({
     where: and(eq(appUsers.id, id), eq(appUsers.appId, appId)),
+    with: {
+      currentVersion: {
+        columns: {
+          id: true,
+          version: true,
+          build: true,
+          runtimeVersion: true,
+        },
+      },
+    },
   });
 
   if (!user) {
@@ -143,25 +180,34 @@ export const getOne = async (c: Parameters<AppRouteHandler<GetOneRoute>>[0]) => 
   }
 
   // 获取更新历史（简化版，实际可以从操作日志表获取）
-  const updateHistory = user.lastUpdateAt ? [{
-    version: user.currentVersion || "",
-    updatedAt: user.lastUpdateAt,
-    status: "success",
-  }] : [];
+  const updateHistory = user.lastUpdateAt
+    ? [{
+        version: user.currentVersion?.version || "",
+        updatedAt: user.lastUpdateAt,
+        status: "success",
+      }]
+    : [];
 
   return successResponse(c, {
     id: user.id,
     deviceId: user.deviceId,
     userId: user.userId || undefined,
-    currentVersion: user.currentVersion || undefined,
+    currentVersionId: user.currentVersionId || undefined,
+    currentVersion: user.currentVersion
+      ? {
+          id: user.currentVersion.id,
+          version: user.currentVersion.version,
+          runtimeVersion: user.currentVersion.runtimeVersion,
+        }
+      : undefined,
     lastUpdateAt: user.lastUpdateAt || undefined,
     deviceInfo,
     status: user.status,
     updateHistory,
   });
-};
+}
 
-export const updateVersion = async (c: Parameters<AppRouteHandler<UpdateVersionRoute>>[0]) => {
+export async function updateVersion(c: Parameters<AppRouteHandler<UpdateVersionRoute>>[0]) {
   const { appId, id } = c.req.valid("param");
   const data = c.req.valid("json");
   const userPayload = c.get("user");
@@ -220,9 +266,9 @@ export const updateVersion = async (c: Parameters<AppRouteHandler<UpdateVersionR
     taskId: task.id,
     status: task.status,
   });
-};
+}
 
-export const batchUpdate = async (c: Parameters<AppRouteHandler<BatchUpdateRoute>>[0]) => {
+export async function batchUpdate(c: Parameters<AppRouteHandler<BatchUpdateRoute>>[0]) {
   const { appId } = c.req.valid("param");
   const data = c.req.valid("json");
   const userPayload = c.get("user");
@@ -266,9 +312,9 @@ export const batchUpdate = async (c: Parameters<AppRouteHandler<BatchUpdateRoute
     taskId: task.id,
     affectedCount: data.userIds.length,
   });
-};
+}
 
-export const rollback = async (c: Parameters<AppRouteHandler<RollbackRoute>>[0]) => {
+export async function rollback(c: Parameters<AppRouteHandler<RollbackRoute>>[0]) {
   const { appId, id } = c.req.valid("param");
   const data = c.req.valid("json");
   const userPayload = c.get("user");
@@ -326,9 +372,9 @@ export const rollback = async (c: Parameters<AppRouteHandler<RollbackRoute>>[0])
   return successResponse(c, {
     taskId: task.id,
   });
-};
+}
 
-export const setTargetVersion = async (c: Parameters<AppRouteHandler<SetTargetVersionRoute>>[0]) => {
+export async function setTargetVersion(c: Parameters<AppRouteHandler<SetTargetVersionRoute>>[0]) {
   const { appId, id } = c.req.valid("param");
   const { versionId } = c.req.valid("json");
 
@@ -376,5 +422,4 @@ export const setTargetVersion = async (c: Parameters<AppRouteHandler<SetTargetVe
     targetVersionId: updatedUser.targetVersionId,
     updatedAt: updatedUser.updatedAt,
   });
-};
-
+}
