@@ -7,6 +7,7 @@ import { defaultHook } from "stoker/openapi";
 
 import { pinoLogger } from "@/middlewares/pino-logger";
 import { corsMiddleware } from "@/middlewares/cors";
+import { operationLoggerMiddleware } from "@/middlewares/operation-logger";
 
 import type { AppBindings, AppOpenAPI } from "./types";
 
@@ -22,7 +23,8 @@ export default function createApp() {
   app.use(requestId())
     .use(corsMiddleware)
     .use(serveEmojiFavicon("📝"))
-    .use(pinoLogger());
+    .use(pinoLogger())
+    .use(operationLoggerMiddleware);
 
   app.notFound(notFound);
   app.onError(onError);
