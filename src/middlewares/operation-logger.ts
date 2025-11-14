@@ -139,11 +139,14 @@ export const operationLoggerMiddleware = createMiddleware<AppBindings>(
     // 尝试从参数中提取 appId 和 targetId
     let appId: string | null = null;
     let targetId: string | null = null;
+    let routeParams: Record<string, unknown> | null = null;
+    let queryParams: Record<string, unknown> | null = null;
 
     try {
-      // 尝试获取验证后的参数
+      // 尝试获取验证后的路由参数
       const params = (c.req.valid as (key: string) => Record<string, string> | undefined)("param");
       if (params) {
+        routeParams = params as Record<string, unknown>;
         const ids = extractIds(path, params);
         appId = ids.appId;
         targetId = ids.targetId;
@@ -162,6 +165,33 @@ export const operationLoggerMiddleware = createMiddleware<AppBindings>(
       targetId = ids.targetId;
     }
 
+    // 获取查询参数
+    try {
+      const query = (c.req.valid as (key: string) => Record<string, unknown> | undefined)("query");
+      if (query) {
+        queryParams = query;
+      }
+      else {
+        // 如果验证失败，尝试从 URL 中解析查询参数
+        const url = new URL(c.req.url);
+        if (url.searchParams.toString()) {
+          queryParams = Object.fromEntries(url.searchParams.entries());
+        }
+      }
+    }
+    catch {
+      // 如果验证失败，尝试从 URL 中解析查询参数
+      try {
+        const url = new URL(c.req.url);
+        if (url.searchParams.toString()) {
+          queryParams = Object.fromEntries(url.searchParams.entries());
+        }
+      }
+      catch {
+        // 忽略解析错误
+      }
+    }
+
     // 确定操作状态
     const status = statusCode >= 200 && statusCode < 300 ? "success" : "failed";
 
@@ -171,6 +201,64 @@ export const operationLoggerMiddleware = createMiddleware<AppBindings>(
       method,
       statusCode,
     };
+
+    // 记录路由参数（如果存在）
+    if (routeParams && Object.keys(routeParams).length > 0) {
+      details.params = routeParams;
+    }
+
+    // 记录查询参数（如果存在）
+    if (queryParams && Object.keys(queryParams).length > 0) {
+      details.query = queryParams;
+    }
+
+    // 对于 POST、PUT、PATCH 请求，尝试记录请求体
+    if (["POST", "PUT", "PATCH"].includes(method)) {
+      try {
+        // 尝试获取验证后的 JSON 数据
+        const body = (c.req.valid as (key: string) => Record<string, unknown> | undefined)("json");
+        if (body) {
+          // 过滤敏感字段，只记录安全的字段
+          const safeFields = [
+            "version",
+            "build",
+            "runtimeVersion",
+            "name",
+            "description",
+            "status",
+            "isMandatory",
+            "publishTime",
+            "scheduledAt",
+            "type",
+            "deviceId",
+            "userId",
+            "versionId",
+          ];
+          const safeBody: Record<string, unknown> = {};
+          for (const field of safeFields) {
+            if (field in body) {
+              safeBody[field] = body[field];
+            }
+          }
+          // 如果还有其他非敏感字段，也可以记录（但要排除明显的敏感字段）
+          const sensitiveFields = ["password", "token", "secret", "key", "auth"];
+          for (const [key, value] of Object.entries(body)) {
+            if (!safeFields.includes(key) && !sensitiveFields.some(sensitive => key.toLowerCase().includes(sensitive))) {
+              // 只记录简单类型，避免记录复杂对象
+              if (typeof value === "string" || typeof value === "number" || typeof value === "boolean" || value === null) {
+                safeBody[key] = value;
+              }
+            }
+          }
+          if (Object.keys(safeBody).length > 0) {
+            details.body = safeBody;
+          }
+        }
+      }
+      catch {
+        // 如果无法获取请求体，忽略错误（请求体可能已被消费）
+      }
+    }
 
     // 异步记录日志（不阻塞响应）
     db.insert(operationLogs)
