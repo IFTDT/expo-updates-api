@@ -17,4 +17,3 @@ router.openapi(routes.logout, handlers.logout);
 router.openapi(routes.getMe, handlers.getMe);
 
 export default router;
-

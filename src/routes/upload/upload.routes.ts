@@ -84,4 +84,3 @@ export const getProgress = createRoute({
 
 export type UploadRoute = typeof upload;
 export type GetProgressRoute = typeof getProgress;
-

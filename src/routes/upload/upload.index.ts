@@ -12,4 +12,3 @@ router.openapi(routes.upload, handlers.upload);
 router.openapi(routes.getProgress, handlers.getProgress);
 
 export default router;
-

@@ -18,4 +18,3 @@ export const userApps = sqliteTable("user_apps", {
   index("user_apps_app_id_idx").on(table.appId),
   unique("user_apps_user_app_unique").on(table.userId, table.appId),
 ]);
-

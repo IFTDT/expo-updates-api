@@ -29,4 +29,3 @@ export const uploads = sqliteTable("uploads", {
   index("uploads_status_idx").on(table.status),
   index("uploads_uploaded_by_idx").on(table.uploadedBy),
 ]);
-

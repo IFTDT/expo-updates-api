@@ -1,14 +1,15 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 
-import db from "@/db";
-import { apps, userGroups, userGroupMembers, appUsers, versions } from "@/db/schema";
-import { errorResponse, successResponse } from "@/lib/response";
 import type { AppRouteHandler } from "@/lib/types";
 
-import type { AddUsersRoute, CreateRoute, GetOneRoute, ListRoute, RemoveRoute, RemoveUsersRoute, UpdateRoute, SetTargetVersionRoute } from "./user-groups.routes";
+import db from "@/db";
+import { apps, userGroupMembers, userGroups, versions } from "@/db/schema";
+import { errorResponse, successResponse } from "@/lib/response";
 
-export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
+import type { AddUsersRoute, CreateRoute, GetOneRoute, ListRoute, RemoveRoute, RemoveUsersRoute, SetTargetVersionRoute, UpdateRoute } from "./user-groups.routes";
+
+export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
   const { appId } = c.req.valid("param");
   const query = c.req.valid("query");
 
@@ -75,9 +76,9 @@ export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
   return successResponse(c, {
     items: formattedItems,
   });
-};
+}
 
-export const getOne = async (c: Parameters<AppRouteHandler<GetOneRoute>>[0]) => {
+export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
   const { appId, id } = c.req.valid("param");
 
   // 验证分组是否存在
@@ -125,9 +126,9 @@ export const getOne = async (c: Parameters<AppRouteHandler<GetOneRoute>>[0]) => 
     createdAt: group.createdAt,
     updatedAt: group.updatedAt,
   });
-};
+}
 
-export const create = async (c: Parameters<AppRouteHandler<CreateRoute>>[0]) => {
+export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
   const { appId } = c.req.valid("param");
   const data = c.req.valid("json");
   const userPayload = c.get("user");
@@ -167,7 +168,7 @@ export const create = async (c: Parameters<AppRouteHandler<CreateRoute>>[0]) => 
 
   // 添加用户到分组
   if (data.userIds.length > 0) {
-    const members = data.userIds.map((userId) => ({
+    const members = data.userIds.map(userId => ({
       groupId: newGroup.id,
       appUserId: userId,
     }));
@@ -186,9 +187,9 @@ export const create = async (c: Parameters<AppRouteHandler<CreateRoute>>[0]) => 
     undefined,
     HttpStatusCodes.CREATED,
   );
-};
+}
 
-export const update = async (c: Parameters<AppRouteHandler<UpdateRoute>>[0]) => {
+export async function update(c: Parameters<AppRouteHandler<UpdateRoute>>[0]) {
   const { appId, id } = c.req.valid("param");
   const data = c.req.valid("json");
 
@@ -209,8 +210,10 @@ export const update = async (c: Parameters<AppRouteHandler<UpdateRoute>>[0]) => 
 
   // 更新分组信息
   const updateData: Partial<typeof userGroups.$inferInsert> = {};
-  if (data.name) updateData.name = data.name;
-  if (data.description !== undefined) updateData.description = data.description;
+  if (data.name)
+    updateData.name = data.name;
+  if (data.description !== undefined)
+    updateData.description = data.description;
 
   if (Object.keys(updateData).length > 0) {
     await db.update(userGroups)
@@ -226,7 +229,7 @@ export const update = async (c: Parameters<AppRouteHandler<UpdateRoute>>[0]) => 
 
     // 添加新成员
     if (data.userIds.length > 0) {
-      const members = data.userIds.map((userId) => ({
+      const members = data.userIds.map(userId => ({
         groupId: id,
         appUserId: userId,
       }));
@@ -251,9 +254,9 @@ export const update = async (c: Parameters<AppRouteHandler<UpdateRoute>>[0]) => 
     userCount: updatedGroup!.members.length,
     updatedAt: updatedGroup!.updatedAt,
   });
-};
+}
 
-export const remove = async (c: Parameters<AppRouteHandler<RemoveRoute>>[0]) => {
+export async function remove(c: Parameters<AppRouteHandler<RemoveRoute>>[0]) {
   const { appId, id } = c.req.valid("param");
 
   // 验证分组是否存在
@@ -276,9 +279,9 @@ export const remove = async (c: Parameters<AppRouteHandler<RemoveRoute>>[0]) => 
     .where(eq(userGroups.id, id));
 
   return successResponse(c, null, "分组删除成功");
-};
+}
 
-export const addUsers = async (c: Parameters<AppRouteHandler<AddUsersRoute>>[0]) => {
+export async function addUsers(c: Parameters<AppRouteHandler<AddUsersRoute>>[0]) {
   const { appId, id } = c.req.valid("param");
   const data = c.req.valid("json");
 
@@ -303,14 +306,14 @@ export const addUsers = async (c: Parameters<AppRouteHandler<AddUsersRoute>>[0])
     columns: { appUserId: true },
   });
 
-  const existingUserIds = new Set(existingMembers.map((m) => m.appUserId));
+  const existingUserIds = new Set(existingMembers.map(m => m.appUserId));
 
   // 过滤出需要添加的用户（不在现有成员中的）
-  const newUserIds = data.userIds.filter((userId) => !existingUserIds.has(userId));
+  const newUserIds = data.userIds.filter(userId => !existingUserIds.has(userId));
 
   let addedCount = 0;
   if (newUserIds.length > 0) {
-    const members = newUserIds.map((userId) => ({
+    const members = newUserIds.map(userId => ({
       groupId: id,
       appUserId: userId,
     }));
@@ -333,9 +336,9 @@ export const addUsers = async (c: Parameters<AppRouteHandler<AddUsersRoute>>[0])
     addedCount,
     userCount: updatedGroup!.members.length,
   });
-};
+}
 
-export const removeUsers = async (c: Parameters<AppRouteHandler<RemoveUsersRoute>>[0]) => {
+export async function removeUsers(c: Parameters<AppRouteHandler<RemoveUsersRoute>>[0]) {
   const { appId, id } = c.req.valid("param");
   const data = c.req.valid("json");
 
@@ -379,9 +382,9 @@ export const removeUsers = async (c: Parameters<AppRouteHandler<RemoveUsersRoute
     removedCount: data.userIds.length,
     userCount: updatedGroup!.members.length,
   });
-};
+}
 
-export const setTargetVersion = async (c: Parameters<AppRouteHandler<SetTargetVersionRoute>>[0]) => {
+export async function setTargetVersion(c: Parameters<AppRouteHandler<SetTargetVersionRoute>>[0]) {
   const { appId, id } = c.req.valid("param");
   const { versionId } = c.req.valid("json");
 
@@ -429,5 +432,4 @@ export const setTargetVersion = async (c: Parameters<AppRouteHandler<SetTargetVe
     targetVersionId: updatedGroup.targetVersionId,
     updatedAt: updatedGroup.updatedAt,
   });
-};
-
+}

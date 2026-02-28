@@ -898,17 +898,20 @@ async function checkAndDownloadUpdate() {
     const manifest = await client.checkForUpdate(currentUpdateId);
 
     if (!manifest) {
+      // eslint-disable-next-line no-console
       console.log("没有可用更新");
       return;
     }
 
     // 2. 检查是否是同一个更新
     if (currentUpdateId === manifest.id) {
+      // eslint-disable-next-line no-console
       console.log("已是最新版本");
       return;
     }
 
     // 3. 下载更新
+    // eslint-disable-next-line no-console
     console.log("开始下载更新...");
     const { launchAsset, assets } = await client.downloadUpdate(manifest);
 
@@ -920,7 +923,7 @@ async function checkAndDownloadUpdate() {
 
     // 6. 应用更新
     // ...
-
+    // eslint-disable-next-line no-console
     console.log("更新完成");
   }
   catch (error) {
@@ -964,8 +967,8 @@ async function checkAndDownloadUpdate() {
 #### 客户端代码示例
 
 ```typescript
-import * as Updates from 'expo-updates';
-import { useEffect } from 'react';
+import * as Updates from "expo-updates";
+import { useEffect } from "react";
 
 export default function App() {
   useEffect(() => {
@@ -984,14 +987,11 @@ export default function App() {
         // 重新加载应用以应用更新
         await Updates.reloadAsync();
       }
-    } catch (error) {
-      console.error('检查更新失败:', error);
+    }
+    catch (error) {
+      console.error("检查更新失败:", error);
     }
   }
-
-  return (
-    // 你的应用内容
-  );
 }
 ```
 
@@ -1103,6 +1103,7 @@ async function verifyAssetHash(
 ): Promise<boolean> {
   const hash = crypto
     .createHash("sha256")
+    // eslint-disable-next-line node/prefer-global/buffer
     .update(Buffer.from(data))
     .digest("base64url");
 

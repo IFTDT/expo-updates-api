@@ -19,6 +19,8 @@ export const updateTasks = sqliteTable("update_tasks", {
   successCount: integer().default(0),
   failureCount: integer().default(0),
   progress: integer().default(0), // 0-100
+  targetUserIds: text(), // JSON array - 目标用户ID列表（app_users.id）
+  targetGroupIds: text(), // JSON array - 目标用户组ID列表（user_groups.id）
   successUserIds: text(), // JSON array - 更新成功的用户ID列表（app_users.id）
   failureUserIds: text(), // JSON array - 更新失败的用户ID列表（app_users.id）
   createdBy: text().notNull().references(() => users.id),

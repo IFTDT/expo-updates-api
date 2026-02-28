@@ -2,8 +2,8 @@ import { createRoute, z } from "@hono/zod-openapi";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 import { jsonContent, jsonContentRequired } from "stoker/openapi/helpers";
 
-import { paginationQuerySchema } from "@/lib/pagination";
 import { notFoundSchema } from "@/lib/constants";
+import { paginationQuerySchema } from "@/lib/pagination";
 import { StringIdParamsSchema } from "@/lib/schemas";
 
 const tags = ["PlatformUsers"];
@@ -203,4 +203,3 @@ export type UpdateRoute = typeof update;
 export type RemoveRoute = typeof remove;
 export type ResetPasswordRoute = typeof resetPassword;
 export type ToggleStatusRoute = typeof toggleStatus;
-

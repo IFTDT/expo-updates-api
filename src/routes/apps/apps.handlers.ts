@@ -1,14 +1,15 @@
 import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 
-import db from "@/db";
-import { apps, userApps, versions, appUsers } from "@/db/schema";
-import { paginationResponse, errorResponse, successResponse } from "@/lib/response";
 import type { AppRouteHandler } from "@/lib/types";
 
-import type { CreateRoute, GetOneRoute, ListRoute, UpdateRoute, RemoveRoute, SetCurrentVersionRoute } from "./apps.routes";
+import db from "@/db";
+import { apps, userApps, versions } from "@/db/schema";
+import { errorResponse, paginationResponse, successResponse } from "@/lib/response";
 
-export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
+import type { CreateRoute, GetOneRoute, ListRoute, RemoveRoute, SetCurrentVersionRoute, UpdateRoute } from "./apps.routes";
+
+export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
   const query = c.req.valid("query");
   const page = query.page || 1;
   const limit = query.limit || 20;
@@ -96,17 +97,19 @@ export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
       ownerId: item.ownerId,
-      owner: item.owner ? {
-        id: item.owner.id,
-        name: item.owner.name,
-      } : undefined,
+      owner: item.owner
+        ? {
+            id: item.owner.id,
+            name: item.owner.name,
+          }
+        : undefined,
     };
   });
 
   return paginationResponse(c, formattedItems, page, limit, total);
-};
+}
 
-export const getOne = async (c: Parameters<AppRouteHandler<GetOneRoute>>[0]) => {
+export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
   const { id } = c.req.valid("param");
 
   const app = await db.query.apps.findFirst({
@@ -152,15 +155,17 @@ export const getOne = async (c: Parameters<AppRouteHandler<GetOneRoute>>[0]) => 
     createdAt: app.createdAt,
     updatedAt: app.updatedAt,
     ownerId: app.ownerId,
-    owner: app.owner ? {
-      id: app.owner.id,
-      name: app.owner.name,
-      email: app.owner.email,
-    } : undefined,
+    owner: app.owner
+      ? {
+          id: app.owner.id,
+          name: app.owner.name,
+          email: app.owner.email,
+        }
+      : undefined,
   });
-};
+}
 
-export const create = async (c: Parameters<AppRouteHandler<CreateRoute>>[0]) => {
+export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
   const data = c.req.valid("json");
   const userPayload = c.get("user");
 
@@ -217,9 +222,9 @@ export const create = async (c: Parameters<AppRouteHandler<CreateRoute>>[0]) => 
     undefined,
     HttpStatusCodes.CREATED,
   );
-};
+}
 
-export const update = async (c: Parameters<AppRouteHandler<UpdateRoute>>[0]) => {
+export async function update(c: Parameters<AppRouteHandler<UpdateRoute>>[0]) {
   const { id } = c.req.valid("param");
   const data = c.req.valid("json");
 
@@ -251,9 +256,9 @@ export const update = async (c: Parameters<AppRouteHandler<UpdateRoute>>[0]) => 
     name: updatedApp.name,
     updatedAt: updatedApp.updatedAt,
   });
-};
+}
 
-export const remove = async (c: Parameters<AppRouteHandler<RemoveRoute>>[0]) => {
+export async function remove(c: Parameters<AppRouteHandler<RemoveRoute>>[0]) {
   const { id } = c.req.valid("param");
   const userPayload = c.get("user");
 
@@ -298,9 +303,9 @@ export const remove = async (c: Parameters<AppRouteHandler<RemoveRoute>>[0]) => 
     .where(eq(apps.id, id));
 
   return successResponse(c, null, "应用删除成功");
-};
+}
 
-export const setCurrentVersion = async (c: Parameters<AppRouteHandler<SetCurrentVersionRoute>>[0]) => {
+export async function setCurrentVersion(c: Parameters<AppRouteHandler<SetCurrentVersionRoute>>[0]) {
   const { id } = c.req.valid("param");
   const { versionId } = c.req.valid("json");
 
@@ -349,5 +354,4 @@ export const setCurrentVersion = async (c: Parameters<AppRouteHandler<SetCurrent
     currentVersionId: updatedApp.currentVersionId,
     updatedAt: updatedApp.updatedAt,
   });
-};
-
+}

@@ -13,4 +13,3 @@ router.openapi(routes.getOne, handlers.getOne);
 router.openapi(routes.create, handlers.create);
 
 export default router;
-

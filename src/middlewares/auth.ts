@@ -35,7 +35,7 @@ export const authMiddleware = createMiddleware<AppBindings>(async (c, next) => {
     const payload = verifyToken(token);
     c.set("user", payload);
   }
-  catch (error) {
+  catch {
     return c.json(
       {
         success: false,

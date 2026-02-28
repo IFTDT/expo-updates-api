@@ -21,4 +21,3 @@ export const AppIdVersionIdParamsSchema = z.object({
   appId: z.string(),
   id: z.string(),
 });
-

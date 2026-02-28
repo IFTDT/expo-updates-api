@@ -22,4 +22,3 @@ export const users = sqliteTable("users", {
 }, table => [
   index("users_email_idx").on(table.email),
 ]);
-

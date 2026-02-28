@@ -1,7 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 import { jsonContent, jsonContentRequired } from "stoker/openapi/helpers";
-import { createErrorSchema, IdParamsSchema } from "stoker/openapi/schemas";
 
 const tags = ["Auth"];
 
@@ -154,4 +153,3 @@ export type LoginRoute = typeof login;
 export type LogoutRoute = typeof logout;
 export type GetMeRoute = typeof getMe;
 export type RefreshRoute = typeof refresh;
-

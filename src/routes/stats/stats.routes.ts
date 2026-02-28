@@ -111,4 +111,3 @@ export const getUpdateSuccessRate = createRoute({
 export type GetAppStatsRoute = typeof getAppStats;
 export type GetVersionDistributionRoute = typeof getVersionDistribution;
 export type GetUpdateSuccessRateRoute = typeof getUpdateSuccessRate;
-

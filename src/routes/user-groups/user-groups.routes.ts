@@ -1,7 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 import { jsonContent, jsonContentRequired } from "stoker/openapi/helpers";
-import { createErrorSchema } from "stoker/openapi/schemas";
 
 import { notFoundSchema } from "@/lib/constants";
 import { AppIdParamsSchema, AppIdVersionIdParamsSchema } from "@/lib/schemas";
@@ -261,4 +260,3 @@ export type RemoveRoute = typeof remove;
 export type AddUsersRoute = typeof addUsers;
 export type RemoveUsersRoute = typeof removeUsers;
 export type SetTargetVersionRoute = typeof setTargetVersion;
-

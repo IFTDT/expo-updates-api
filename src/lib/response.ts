@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+
 import * as HttpStatusCodes from "stoker/http-status-codes";
 
 type ContentfulStatusCode = typeof HttpStatusCodes[keyof typeof HttpStatusCodes];
@@ -108,4 +109,3 @@ export function paginationResponse<T>(
     } as PaginationResponse<T>,
   );
 }
-

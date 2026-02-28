@@ -27,4 +27,3 @@ export async function createOperationLog(params: CreateLogParams): Promise<void>
     userId: params.userId,
   });
 }
-

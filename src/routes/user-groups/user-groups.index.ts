@@ -18,4 +18,3 @@ router.openapi(routes.removeUsers, handlers.removeUsers);
 router.openapi(routes.setTargetVersion, handlers.setTargetVersion);
 
 export default router;
-

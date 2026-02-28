@@ -3,8 +3,8 @@ import * as HttpStatusCodes from "stoker/http-status-codes";
 import { jsonContent, jsonContentRequired } from "stoker/openapi/helpers";
 import { createErrorSchema } from "stoker/openapi/schemas";
 
-import { paginationQuerySchema, sortQuerySchema } from "@/lib/pagination";
 import { notFoundSchema } from "@/lib/constants";
+import { paginationQuerySchema, sortQuerySchema } from "@/lib/pagination";
 import { StringIdParamsSchema } from "@/lib/schemas";
 
 const tags = ["Apps"];
@@ -233,4 +233,3 @@ export type CreateRoute = typeof create;
 export type UpdateRoute = typeof update;
 export type RemoveRoute = typeof remove;
 export type SetCurrentVersionRoute = typeof setCurrentVersion;
-

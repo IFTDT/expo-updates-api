@@ -1,11 +1,10 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 import { jsonContent, jsonContentRequired } from "stoker/openapi/helpers";
-import { createErrorSchema } from "stoker/openapi/schemas";
 
-import { paginationQuerySchema } from "@/lib/pagination";
 import { notFoundSchema } from "@/lib/constants";
-import { AppIdParamsSchema, AppIdVersionIdParamsSchema, StringIdParamsSchema } from "@/lib/schemas";
+import { paginationQuerySchema } from "@/lib/pagination";
+import { AppIdParamsSchema } from "@/lib/schemas";
 
 const tags = ["UpdateTasks"];
 
@@ -132,4 +131,3 @@ export const create = createRoute({
 export type ListRoute = typeof list;
 export type GetOneRoute = typeof getOne;
 export type CreateRoute = typeof create;
-

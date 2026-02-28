@@ -13,4 +13,3 @@ router.openapi(routes.getVersionDistribution, handlers.getVersionDistribution);
 router.openapi(routes.getUpdateSuccessRate, handlers.getUpdateSuccessRate);
 
 export default router;
-

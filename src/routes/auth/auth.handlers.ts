@@ -1,15 +1,16 @@
 import { eq } from "drizzle-orm";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 
-import db from "@/db";
-import { users, userApps } from "@/db/schema";
-import { generateToken, generateTokenPair, verifyToken, verifyPassword } from "@/lib/auth";
-import { errorResponse, successResponse } from "@/lib/response";
 import type { AppRouteHandler } from "@/lib/types";
+
+import db from "@/db";
+import { users } from "@/db/schema";
+import { generateToken, generateTokenPair, verifyPassword, verifyToken } from "@/lib/auth";
+import { errorResponse, successResponse } from "@/lib/response";
 
 import type { GetMeRoute, LoginRoute, LogoutRoute, RefreshRoute } from "./auth.routes";
 
-export const login = async (c: Parameters<AppRouteHandler<LoginRoute>>[0]) => {
+export async function login(c: Parameters<AppRouteHandler<LoginRoute>>[0]) {
   const { email, password } = c.req.valid("json");
 
   // 查找用户
@@ -85,14 +86,14 @@ export const login = async (c: Parameters<AppRouteHandler<LoginRoute>>[0]) => {
     },
     appIds,
   });
-};
+}
 
-export const logout = async (c: Parameters<AppRouteHandler<LogoutRoute>>[0]) => {
+export async function logout(c: Parameters<AppRouteHandler<LogoutRoute>>[0]) {
   // 客户端删除Token即可，服务端可以记录日志
   return successResponse(c, null, "登出成功");
-};
+}
 
-export const getMe = async (c: Parameters<AppRouteHandler<GetMeRoute>>[0]) => {
+export async function getMe(c: Parameters<AppRouteHandler<GetMeRoute>>[0]) {
   const userPayload = c.get("user");
   if (!userPayload) {
     return errorResponse(
@@ -132,9 +133,9 @@ export const getMe = async (c: Parameters<AppRouteHandler<GetMeRoute>>[0]) => {
     avatar: user.avatar || undefined,
     appIds,
   });
-};
+}
 
-export const refresh = async (c: Parameters<AppRouteHandler<RefreshRoute>>[0]) => {
+export async function refresh(c: Parameters<AppRouteHandler<RefreshRoute>>[0]) {
   const { refreshToken } = c.req.valid("json");
 
   try {
@@ -171,6 +172,7 @@ export const refresh = async (c: Parameters<AppRouteHandler<RefreshRoute>>[0]) =
       expiresIn,
     });
   }
+  // eslint-disable-next-line unused-imports/no-unused-vars
   catch (error) {
     return errorResponse(
       c,
@@ -180,5 +182,4 @@ export const refresh = async (c: Parameters<AppRouteHandler<RefreshRoute>>[0]) =
       HttpStatusCodes.UNAUTHORIZED,
     );
   }
-};
-
+}

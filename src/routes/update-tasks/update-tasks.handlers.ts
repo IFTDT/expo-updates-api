@@ -1,14 +1,15 @@
 import { and, count, desc, eq } from "drizzle-orm";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 
+import type { AppRouteHandler } from "@/lib/types";
+
 import db from "@/db";
 import { apps, updateTasks, versions } from "@/db/schema";
-import { paginationResponse, errorResponse, successResponse } from "@/lib/response";
-import type { AppRouteHandler } from "@/lib/types";
+import { errorResponse, paginationResponse, successResponse } from "@/lib/response";
 
 import type { CreateRoute, GetOneRoute, ListRoute } from "./update-tasks.routes";
 
-export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
+export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
   const { appId } = c.req.valid("param");
   const query = c.req.valid("query");
   const page = query.page || 1;
@@ -65,10 +66,12 @@ export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
       id: item.id,
       appId: item.appId,
       versionId: item.versionId,
-      version: item.version ? {
-        id: item.version.id,
-        version: item.version.version,
-      } : undefined,
+      version: item.version
+        ? {
+            id: item.version.id,
+            version: item.version.version,
+          }
+        : undefined,
       type: item.type,
       status: item.status,
       scheduledAt: item.scheduledAt || undefined,
@@ -82,9 +85,9 @@ export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
   });
 
   return paginationResponse(c, formattedItems, page, limit, total);
-};
+}
 
-export const getOne = async (c: Parameters<AppRouteHandler<GetOneRoute>>[0]) => {
+export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
   const { appId, id } = c.req.valid("param");
 
   // 验证任务是否存在
@@ -124,9 +127,9 @@ export const getOne = async (c: Parameters<AppRouteHandler<GetOneRoute>>[0]) => 
     details,
     createdAt: task.createdAt,
   });
-};
+}
 
-export const create = async (c: Parameters<AppRouteHandler<CreateRoute>>[0]) => {
+export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
   const { appId } = c.req.valid("param");
   const data = c.req.valid("json");
   const userPayload = c.get("user");
@@ -193,5 +196,4 @@ export const create = async (c: Parameters<AppRouteHandler<CreateRoute>>[0]) => 
     undefined,
     HttpStatusCodes.CREATED,
   );
-};
-
+}

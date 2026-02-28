@@ -1,0 +1,24 @@
+services:
+  api:
+    container_name: expo-updates-api
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: expo-updates-api:latest
+    restart: unless-stopped
+    ports:
+      - "9999:9999"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 9999
+    volumes:
+      - ./uploads:/app/uploads
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9999/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

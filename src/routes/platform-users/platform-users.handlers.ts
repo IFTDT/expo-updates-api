@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, or, sql } from "drizzle-orm";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 
 import type { AppRouteHandler } from "@/lib/types";
@@ -7,7 +7,6 @@ import db from "@/db";
 import { userApps, users } from "@/db/schema";
 import { hashPassword } from "@/lib/auth";
 import { errorResponse, paginationResponse, successResponse } from "@/lib/response";
-import { adminMiddleware } from "@/middlewares/auth";
 
 import type { CreateRoute, ListRoute, RemoveRoute, ResetPasswordRoute, ToggleStatusRoute, UpdateRoute } from "./platform-users.routes";
 

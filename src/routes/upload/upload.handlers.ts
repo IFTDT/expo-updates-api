@@ -1,21 +1,21 @@
-import { createHash } from "crypto";
 import { eq } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import * as HttpStatusCodes from "stoker/http-status-codes";
-import { readFile } from "node:fs/promises";
-import { writeFile, mkdir } from "node:fs/promises";
-import { join, dirname } from "node:path";
+
+import type { AppRouteHandler } from "@/lib/types";
 
 import db from "@/db";
 import { apps, uploads } from "@/db/schema";
 import { errorResponse, successResponse } from "@/lib/response";
-import type { AppRouteHandler } from "@/lib/types";
 
 import type { GetProgressRoute, UploadRoute } from "./upload.routes";
 
 // 上传文件存储目录
 const UPLOAD_DIR = "./uploads";
 
-export const upload = async (c: Parameters<AppRouteHandler<UploadRoute>>[0]) => {
+export async function upload(c: Parameters<AppRouteHandler<UploadRoute>>[0]) {
   const userPayload = c.get("user");
 
   if (!userPayload) {
@@ -96,6 +96,7 @@ export const upload = async (c: Parameters<AppRouteHandler<UploadRoute>>[0]) => 
 
     // 读取文件内容
     const arrayBuffer = await file.arrayBuffer();
+    // eslint-disable-next-line node/prefer-global/buffer
     const buffer = Buffer.from(arrayBuffer);
 
     // 计算文件校验和
@@ -105,7 +106,7 @@ export const upload = async (c: Parameters<AppRouteHandler<UploadRoute>>[0]) => 
 
     // 生成文件路径
     const timestamp = Date.now();
-    const safeFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const safeFileName = fileName.replace(/[^\w.-]/g, "_");
     const filePath = join(UPLOAD_DIR, appId, `${timestamp}_${safeFileName}`);
 
     // 确保目录存在
@@ -146,9 +147,9 @@ export const upload = async (c: Parameters<AppRouteHandler<UploadRoute>>[0]) => 
       HttpStatusCodes.INTERNAL_SERVER_ERROR,
     );
   }
-};
+}
 
-export const getProgress = async (c: Parameters<AppRouteHandler<GetProgressRoute>>[0]) => {
+export async function getProgress(c: Parameters<AppRouteHandler<GetProgressRoute>>[0]) {
   const { id } = c.req.valid("param");
 
   // 查找上传记录
@@ -173,5 +174,4 @@ export const getProgress = async (c: Parameters<AppRouteHandler<GetProgressRoute
     uploadedBytes: uploadRecord.uploadedBytes || 0,
     totalBytes: uploadRecord.totalBytes,
   });
-};
-
+}

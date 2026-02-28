@@ -1,12 +1,13 @@
 import { eq } from "drizzle-orm";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 
+import type { AppRouteHandler } from "@/lib/types";
+
 import db from "@/db";
 import { users } from "@/db/schema";
 import env from "@/env";
 import { hashPassword } from "@/lib/auth";
 import { errorResponse, successResponse } from "@/lib/response";
-import type { AppRouteHandler } from "@/lib/types";
 
 import type { CreateAdminRoute } from "./admin.routes";
 
@@ -15,7 +16,7 @@ import type { CreateAdminRoute } from "./admin.routes";
  * - 如果系统中没有管理员，可以直接创建第一个管理员
  * - 如果系统中已有管理员，需要提供管理密钥（通过环境变量 ADMIN_KEY 配置）
  */
-export const createAdmin = async (c: Parameters<AppRouteHandler<CreateAdminRoute>>[0]) => {
+export async function createAdmin(c: Parameters<AppRouteHandler<CreateAdminRoute>>[0]) {
   const data = c.req.valid("json");
 
   // 检查系统中是否已存在管理员
@@ -79,5 +80,4 @@ export const createAdmin = async (c: Parameters<AppRouteHandler<CreateAdminRoute
     existingAdmin ? "管理员创建成功" : "第一个管理员账户创建成功",
     HttpStatusCodes.CREATED,
   );
-};
-
+}

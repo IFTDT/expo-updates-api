@@ -18,4 +18,3 @@ export const userGroupMembers = sqliteTable("user_group_members", {
   index("user_group_members_app_user_id_idx").on(table.appUserId),
   unique("user_group_members_group_user_unique").on(table.groupId, table.appUserId),
 ]);
-

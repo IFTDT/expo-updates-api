@@ -1,11 +1,11 @@
-import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, or, sql } from "drizzle-orm";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 
 import type { AppRouteHandler } from "@/lib/types";
 
 import db from "@/db";
 import { apps, appUsers, updateTasks, versions } from "@/db/schema";
-import { errorResponse, paginationResponse, successResponse } from "@/lib/response";
+import { errorResponse, successResponse } from "@/lib/response";
 
 import type { BatchUpdateRoute, GetOneRoute, ListRoute, RollbackRoute, SetTargetVersionRoute, UpdateVersionRoute } from "./app-users.routes";
 

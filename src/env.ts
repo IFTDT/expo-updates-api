@@ -19,7 +19,6 @@ const EnvSchema = z.object({
     (val) => {
       // 允许 http://, https://, file: 协议
       try {
-        const url = new URL(val);
         return true;
       }
       catch {

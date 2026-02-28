@@ -3,8 +3,8 @@ import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { toZodV4SchemaTyped } from "@/lib/zod-utils";
 
 import {
-  appUsers,
   apps,
+  appUsers,
   operationLogs,
   tasks,
   updateTasks,
@@ -131,4 +131,3 @@ export const insertTasksSchema = toZodV4SchemaTyped(createInsertSchema(
 
 // @ts-expect-error partial exists on zod v4 type
 export const patchTasksSchema = insertTasksSchema.partial();
-

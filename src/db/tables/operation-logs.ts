@@ -26,4 +26,3 @@ export const operationLogs = sqliteTable("operation_logs", {
   index("operation_logs_status_idx").on(table.status),
   index("operation_logs_created_at_idx").on(table.createdAt),
 ]);
-

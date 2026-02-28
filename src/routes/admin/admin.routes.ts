@@ -2,8 +2,6 @@ import { createRoute, z } from "@hono/zod-openapi";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 import { jsonContent, jsonContentRequired } from "stoker/openapi/helpers";
 
-import { notFoundSchema } from "@/lib/constants";
-
 const tags = ["Admin"];
 
 // ==================== 创建管理员 ====================
@@ -73,4 +71,3 @@ export const createAdmin = createRoute({
 });
 
 export type CreateAdminRoute = typeof createAdmin;
-

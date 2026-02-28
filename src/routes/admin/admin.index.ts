@@ -9,4 +9,3 @@ const router = createRouter();
 router.openapi(routes.createAdmin, handlers.createAdmin);
 
 export default router;
-

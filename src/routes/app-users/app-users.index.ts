@@ -16,4 +16,3 @@ router.openapi(routes.rollback, handlers.rollback);
 router.openapi(routes.setTargetVersion, handlers.setTargetVersion);
 
 export default router;
-

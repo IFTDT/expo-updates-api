@@ -26,4 +26,3 @@ export const userGroups = sqliteTable("user_groups", {
   index("user_groups_name_idx").on(table.name),
   index("user_groups_target_version_id_idx").on(table.targetVersionId),
 ]);
-

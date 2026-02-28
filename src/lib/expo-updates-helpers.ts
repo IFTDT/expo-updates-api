@@ -10,6 +10,7 @@ import { serializeDictionary } from "structured-headers";
  * SHA256 哈希转 UUID
  */
 export function convertSHA256HashToUUID(hash: string): string {
+  // eslint-disable-next-line node/prefer-global/buffer
   const hex = Buffer.from(hash, "base64url").toString("hex");
   return [
     hex.substring(0, 8),
@@ -56,6 +57,7 @@ export function signRSASHA256(data: string, privateKey: string): string {
  * 获取私钥
  */
 export async function getPrivateKeyAsync(): Promise<string | null> {
+  // eslint-disable-next-line node/no-process-env
   const privateKeyPath = process.env.PRIVATE_KEY_PATH;
   if (!privateKeyPath) {
     return null;
@@ -63,7 +65,8 @@ export async function getPrivateKeyAsync(): Promise<string | null> {
   try {
     const pemBuffer = await fs.readFile(privateKeyPath);
     return pemBuffer.toString("utf8");
-  } catch {
+  }
+  catch {
     return null;
   }
 }
@@ -93,7 +96,8 @@ export async function checkUpdateDirectoryExists(
   try {
     await fs.access(updatePath, fs.constants.F_OK);
     return true;
-  } catch {
+  }
+  catch {
     return false;
   }
 }
@@ -111,7 +115,8 @@ export async function getLatestUpdateBundlePathForRuntimeVersionAsync(
   let runtimeDir: string;
   if (appId) {
     runtimeDir = path.join(process.cwd(), baseDir, appId, runtimeVersion);
-  } else {
+  }
+  else {
     runtimeDir = path.join(process.cwd(), baseDir, runtimeVersion);
   }
 
@@ -122,7 +127,8 @@ export async function getLatestUpdateBundlePathForRuntimeVersionAsync(
       throw new Error(
         `No updates found for app ${appId} with runtime version: ${runtimeVersion}`,
       );
-    } else {
+    }
+    else {
       throw new Error(
         `No updates found for runtime version: ${runtimeVersion}`,
       );
@@ -132,8 +138,8 @@ export async function getLatestUpdateBundlePathForRuntimeVersionAsync(
   // 读取所有更新目录
   const entries = await fs.readdir(runtimeDir, { withFileTypes: true });
   const directories = entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
+    .filter(entry => entry.isDirectory())
+    .map(entry => entry.name)
     .sort()
     .reverse();
 
@@ -142,7 +148,8 @@ export async function getLatestUpdateBundlePathForRuntimeVersionAsync(
       throw new Error(
         `No updates found for app ${appId} with runtime version: ${runtimeVersion}`,
       );
-    } else {
+    }
+    else {
       throw new Error(
         `No updates found for runtime version: ${runtimeVersion}`,
       );
@@ -173,7 +180,8 @@ export async function getMetadataAsync(updateBundlePath: string): Promise<{
 
     if (await checkUpdateDirectoryExists(exupPath)) {
       id = await getFileHashAsync(exupPath);
-    } else {
+    }
+    else {
       // 如果没有 exup 文件，使用 metadata 的哈希
       id = crypto
         .createHash("sha256")
@@ -186,7 +194,8 @@ export async function getMetadataAsync(updateBundlePath: string): Promise<{
       createdAt: new Date().toISOString(),
       id,
     };
-  } catch (error) {
+  }
+  catch (error) {
     throw new Error(`Failed to read metadata: ${error}`);
   }
 }
@@ -217,6 +226,7 @@ export async function getAssetMetadataAsync(params: {
     runtimeVersion,
     platform,
     isLaunchAsset,
+    // eslint-disable-next-line node/no-process-env
     baseUrl = process.env.UPDATES_BASE_URL || "http://localhost:9999",
   } = params;
 
@@ -259,7 +269,8 @@ export async function getExpoConfigAsync(
   try {
     const configContent = await fs.readFile(expoConfigPath, "utf-8");
     return JSON.parse(configContent);
-  } catch {
+  }
+  catch {
     // 如果无法读取配置，返回空对象
     return {};
   }
@@ -288,7 +299,8 @@ export async function createRollBackDirectiveAsync(
         commitTime: rollbackData.commitTime || new Date().toISOString(),
       },
     };
-  } catch {
+  }
+  catch {
     throw new Error("Rollback file not found");
   }
 }
@@ -303,7 +315,8 @@ export async function checkRollbackExists(
   try {
     await fs.access(rollbackPath, fs.constants.F_OK);
     return true;
-  } catch {
+  }
+  catch {
     return false;
   }
 }
