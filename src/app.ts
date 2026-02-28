@@ -6,7 +6,7 @@ import apps from "@/routes/apps/apps.index";
 import auth from "@/routes/auth/auth.index";
 import expoUpdates from "@/routes/expo-updates/expo-updates.index";
 import index from "@/routes/index.route";
-// import logs from "@/routes/logs/logs.index";
+import logs from "@/routes/operation-logs/logs.index";
 import platformUsers from "@/routes/platform-users/platform-users.index";
 import stats from "@/routes/stats/stats.index";
 import tasks from "@/routes/tasks/tasks.index";
@@ -33,6 +33,7 @@ const routes = [
   upload,
   tasks,
   expoUpdates,
+  logs,
 ] as const;
 
 routes.forEach((route) => {
