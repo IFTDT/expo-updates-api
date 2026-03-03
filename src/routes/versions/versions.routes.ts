@@ -125,6 +125,11 @@ export const create = createRoute({
               example: "false",
               description: "是否为强制更新，true/false",
             }),
+            uploadToOss: z.string().optional().openapi({
+              enum: ["true", "false"],
+              example: "false",
+              description: "是否上传解压后的文件到 OSS，true/false",
+            }),
             publishTime: z.enum(["now", "scheduled"]).default("now"),
             scheduledAt: z.string().datetime().optional(),
             file: z.instanceof(File).openapi({

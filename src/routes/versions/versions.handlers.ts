@@ -2,7 +2,7 @@ import AdmZip from "adm-zip";
 import { and, count, desc, eq } from "drizzle-orm";
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
-import { mkdir, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 import * as tar from "tar";
@@ -11,6 +11,7 @@ import type { AppRouteHandler } from "@/lib/types";
 
 import db from "@/db";
 import { apps, appUsers, updateTasks, uploads, versions } from "@/db/schema";
+import { buildOssFileUrl, uploadDirectoryToOss } from "@/lib/oss-upload";
 import { errorResponse, paginationResponse, successResponse } from "@/lib/response";
 
 import type { CreateFromUrlRoute, CreateRoute, GetOneRoute, ListRoute, PublishRoute, RemoveRoute, RollbackRoute } from "./versions.routes";
@@ -178,6 +179,44 @@ const UPLOAD_DIR = "./uploads";
 
 const hasInvalidPathSegment = (value: string) => value.includes("..") || value.includes("/") || value.includes("\\");
 
+async function findMetadataRelativePath(baseDir: string): Promise<string | null> {
+  const candidates: string[] = [];
+
+  const walk = async (currentDir: string): Promise<void> => {
+    const entries = await readdir(currentDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const absolutePath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(absolutePath);
+      }
+      else if (entry.isFile() && entry.name === "metadata.json") {
+        const relativePath = path.relative(baseDir, absolutePath);
+        if (relativePath && !relativePath.startsWith("..")) {
+          candidates.push(relativePath);
+        }
+      }
+    }
+  };
+
+  await walk(baseDir);
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  candidates.sort((a, b) => {
+    const depthA = a.split(path.sep).length;
+    const depthB = b.split(path.sep).length;
+    if (depthA !== depthB) {
+      return depthA - depthB;
+    }
+    return a.localeCompare(b);
+  });
+
+  return candidates[0]!;
+}
+
 export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
   const { appId } = c.req.valid("param");
   const userPayload = c.get("user");
@@ -230,6 +269,7 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
   const publishTimeRaw = typeof body.publishTime === "string" && body.publishTime.length > 0 ? body.publishTime : "now";
   const scheduledAtRaw = typeof body.scheduledAt === "string" && body.scheduledAt.length > 0 ? body.scheduledAt : undefined;
   const isMandatoryRaw = body.isMandatory;
+  const uploadToOssRaw = body.uploadToOss;
 
   if (!file) {
     return errorResponse(
@@ -333,6 +373,9 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
   const isMandatory = typeof isMandatoryRaw === "string"
     ? isMandatoryRaw === "true"
     : Boolean(isMandatoryRaw);
+  const uploadToOss = typeof uploadToOssRaw === "string"
+    ? uploadToOssRaw === "true"
+    : Boolean(uploadToOssRaw);
 
   // 检查构建号是否已存在（同一应用下构建号必须唯一）
   const existing = await db.query.versions.findFirst({
@@ -407,6 +450,15 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
   const timestamp = Date.now().toString();
   const safeFileName = originalFileName.replace(/[^\w.-]/g, "_");
   const storageDir = path.join(UPLOAD_DIR, appId, runtimeVersion, sanitizedVersionSegment, timestamp);
+  const ossObjectPrefix = uploadToOss
+    ? path.posix.join(
+        "expo/updates",
+        app.appId.replaceAll(".", "_").replace(/[^\w-]/g, "_"),
+        runtimeVersion,
+        sanitizedVersionSegment,
+        timestamp,
+      )
+    : null;
 
   await mkdir(storageDir, { recursive: true });
 
@@ -450,8 +502,38 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
     );
   }
 
-  // fileUrl 固定为 metadata.json
-  const fileUrl = `/${path.posix.join("uploads", appId, runtimeVersion, sanitizedVersionSegment, timestamp, "metadata.json")}`;
+  if (uploadToOss) {
+    try {
+      if (!ossObjectPrefix) {
+        throw new Error("OSS 上传路径生成失败");
+      }
+      await uploadDirectoryToOss(storageDir, ossObjectPrefix);
+    }
+    catch (error) {
+      return errorResponse(
+        c,
+        "OSS_UPLOAD_ERROR",
+        "文件上传到 OSS 失败",
+        { error: error instanceof Error ? error.message : "Unknown error" },
+        HttpStatusCodes.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  const metadataRelativePath = await findMetadataRelativePath(storageDir);
+  if (!metadataRelativePath) {
+    return errorResponse(
+      c,
+      "VALIDATION_ERROR",
+      "解压后未找到 metadata.json",
+      { field: "file" },
+      HttpStatusCodes.BAD_REQUEST,
+    );
+  }
+
+  const fileUrl = uploadToOss && ossObjectPrefix
+    ? buildOssFileUrl(path.posix.join(ossObjectPrefix, metadataRelativePath.split(path.sep).join(path.posix.sep)))
+    : `/${path.posix.join("uploads", appId, runtimeVersion, sanitizedVersionSegment, timestamp, metadataRelativePath.split(path.sep).join(path.posix.sep))}`;
 
   // 创建上传记录
   const [uploadRecord] = await db.insert(uploads).values({
@@ -495,6 +577,8 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
       type: "full",
       status: "pending",
       scheduledAt: publishTime === "scheduled" && scheduledAt ? scheduledAt : undefined,
+      targetUserIds: JSON.stringify([]),
+      targetGroupIds: JSON.stringify([]),
       createdBy: userPayload.userId,
     }).returning();
     taskId = task.id;
@@ -623,6 +707,8 @@ export async function createFromUrl(c: Parameters<AppRouteHandler<CreateFromUrlR
       type: "full",
       status: "pending",
       scheduledAt: publishTime === "scheduled" && scheduledAt ? scheduledAt : undefined,
+      targetUserIds: JSON.stringify([]),
+      targetGroupIds: JSON.stringify([]),
       createdBy: userPayload.userId,
     }).returning();
     taskId = task.id;

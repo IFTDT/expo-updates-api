@@ -35,6 +35,11 @@ const EnvSchema = z.object({
   ADMIN_KEY: z.string().optional(), // 管理密钥，用于创建管理员账户
   UPDATES_BASE_URL: z.string().optional(), // Expo Updates 服务器基础 URL
   PRIVATE_KEY_PATH: z.string().optional(), // Expo Updates 代码签名私钥路径
+  OSS_REGION: z.string().optional(),
+  OSS_BUCKET: z.string().optional(),
+  OSS_ACCESS_KEY_ID: z.string().optional(),
+  OSS_ACCESS_KEY_SECRET: z.string().optional(),
+  OSS_ENDPOINT: z.string().optional(),
 }).superRefine((input, ctx) => {
   if (input.NODE_ENV === "production" && !input.DATABASE_AUTH_TOKEN) {
     ctx.addIssue({
