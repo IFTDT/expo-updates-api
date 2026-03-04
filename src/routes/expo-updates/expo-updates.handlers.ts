@@ -510,6 +510,7 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
   }
 
   const { updateBundlePath } = bundleResult;
+  const isRemoteBundlePath = /^https?:\/\//i.test(updateBundlePath);
   // 加载元数据以确定资源类型
   let metadataJson: any;
   try {
@@ -531,7 +532,10 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
 
   // 解析资源路径 - assetName 可能是相对路径或绝对路径
   let assetPath: string;
-  if (path.isAbsolute(assetName)) {
+  if (isRemoteBundlePath) {
+    assetPath = new URL(assetName, updateBundlePath.endsWith("/") ? updateBundlePath : `${updateBundlePath}/`).toString();
+  }
+  else if (path.isAbsolute(assetName)) {
     assetPath = assetName;
   }
   else {
@@ -545,25 +549,8 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
     }
   }
 
-  // 检查资源是否存在
-  try {
-    await fs.access(assetPath, fs.constants.F_OK);
-  }
-  catch {
-    return c.json(
-      {
-        success: false,
-        error: {
-          code: "ASSET_NOT_FOUND",
-          message: `Asset "${assetName}" does not exist.`,
-        },
-      },
-      404,
-    );
-  }
-
   // 确定资源类型
-  const relativePath = path.relative(updateBundlePath, assetPath);
+  const relativePath = isRemoteBundlePath ? assetName : path.relative(updateBundlePath, assetPath);
   const assetMetadata = metadataJson.fileMetadata[platform].assets.find(
     (asset: any) => asset.path === relativePath,
   );
@@ -591,11 +578,45 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
 
   // 提供服务资源
   try {
-    const asset = await fs.readFile(assetPath);
-
-    c.header("content-type", contentType);
-
-    const body = new Uint8Array(asset);
+    let body: ArrayBuffer;
+    if (isRemoteBundlePath) {
+      const response = await fetch(assetPath);
+      if (!response.ok) {
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: "ASSET_NOT_FOUND",
+              message: `Asset "${assetName}" does not exist.`,
+            },
+          },
+          404,
+        );
+      }
+      body = await response.arrayBuffer();
+      const remoteContentType = response.headers.get("content-type");
+      c.header("content-type", remoteContentType || contentType);
+    }
+    else {
+      try {
+        await fs.access(assetPath, fs.constants.F_OK);
+      }
+      catch {
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: "ASSET_NOT_FOUND",
+              message: `Asset "${assetName}" does not exist.`,
+            },
+          },
+          404,
+        );
+      }
+      const asset = await fs.readFile(assetPath);
+      c.header("content-type", contentType);
+      body = Uint8Array.from(asset).buffer;
+    }
 
     return new Response(body, {
       headers: c.res.headers,
@@ -645,6 +666,27 @@ interface ResolveUpdateBundlePathFailure {
 type ResolveUpdateBundlePathResult
   = | ResolveUpdateBundlePathSuccess
     | ResolveUpdateBundlePathFailure;
+
+function isHttpUrl(value: string) {
+  return /^https?:\/\//i.test(value);
+}
+
+function normalizeBundlePathFromFileUrl(fileUrl: string) {
+  if (isHttpUrl(fileUrl)) {
+    const url = new URL(fileUrl);
+    if (url.pathname.endsWith("/metadata.json")) {
+      url.pathname = url.pathname.slice(0, -"/metadata.json".length);
+    }
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/+$/, "");
+  }
+
+  const normalized = fileUrl.replace(/\\/g, "/");
+  return normalized.endsWith("/metadata.json")
+    ? normalized.slice(0, -"/metadata.json".length)
+    : normalized;
+}
 
 async function resolveUpdateBundlePath(
   params: ResolveUpdateBundlePathParams,
@@ -794,26 +836,31 @@ async function resolveUpdateBundlePath(
       };
     }
 
-    targetUpdateBundlePath = path.isAbsolute(version.fileUrl)
-      ? path.join(process.cwd(), version.fileUrl)
-      : path.join(process.cwd(), "uploads", version.fileUrl);
+    const normalizedBundlePath = normalizeBundlePathFromFileUrl(version.fileUrl);
+    targetUpdateBundlePath = isHttpUrl(normalizedBundlePath)
+      ? normalizedBundlePath
+      : path.isAbsolute(normalizedBundlePath)
+        ? path.join(process.cwd(), normalizedBundlePath)
+        : path.join(process.cwd(), "uploads", normalizedBundlePath);
 
-    try {
-      await fs.access(targetUpdateBundlePath, fs.constants.F_OK);
-    }
-    catch {
-      // 如果 trackDevice 为 true，记录更新失败
-      if (trackDevice) {
-        await updateTaskStats(targetVersionId, app.id, false, appUser?.id || null);
+    if (!isHttpUrl(targetUpdateBundlePath)) {
+      try {
+        await fs.access(targetUpdateBundlePath, fs.constants.F_OK);
       }
-      return {
-        ok: false,
-        status: 404,
-        error: {
-          code: "UPDATE_NOT_FOUND",
-          message: `Update bundle not found at ${targetUpdateBundlePath}.`,
-        },
-      };
+      catch {
+        // 如果 trackDevice 为 true，记录更新失败
+        if (trackDevice) {
+          await updateTaskStats(targetVersionId, app.id, false, appUser?.id || null);
+        }
+        return {
+          ok: false,
+          status: 404,
+          error: {
+            code: "UPDATE_NOT_FOUND",
+            message: `Update bundle not found at ${targetUpdateBundlePath}.`,
+          },
+        };
+      }
     }
   }
 

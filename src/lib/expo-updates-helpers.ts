@@ -1,16 +1,43 @@
 import type { Dictionary } from "structured-headers";
 
 import mime from "mime";
+import { Buffer } from "node:buffer";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { serializeDictionary } from "structured-headers";
 
+function isHttpUrl(value: string) {
+  return /^https?:\/\//i.test(value);
+}
+
+function ensureTrailingSlash(value: string) {
+  return value.endsWith("/") ? value : `${value}/`;
+}
+
+function joinUpdatePath(basePath: string, filePath: string) {
+  if (isHttpUrl(basePath)) {
+    return new URL(filePath, ensureTrailingSlash(basePath)).toString();
+  }
+  return path.join(basePath, filePath);
+}
+
+async function readFileBufferAny(filePath: string): Promise<Buffer> {
+  if (isHttpUrl(filePath)) {
+    const response = await fetch(filePath);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} ${response.statusText}`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  }
+  return fs.readFile(filePath);
+}
+
 /**
  * SHA256 哈希转 UUID
  */
 export function convertSHA256HashToUUID(hash: string): string {
-  // eslint-disable-next-line node/prefer-global/buffer
   const hex = Buffer.from(hash, "base64url").toString("hex");
   return [
     hex.substring(0, 8),
@@ -25,7 +52,7 @@ export function convertSHA256HashToUUID(hash: string): string {
  * 获取文件的 SHA256 哈希
  */
 export async function getFileHashAsync(filePath: string): Promise<string> {
-  const buffer = await fs.readFile(filePath);
+  const buffer = await readFileBufferAny(filePath);
   const hash = crypto.createHash("sha256").update(buffer).digest("base64url");
   return hash;
 }
@@ -93,6 +120,19 @@ export function serializeSignature(dictionary: Dictionary): string {
 export async function checkUpdateDirectoryExists(
   updatePath: string,
 ): Promise<boolean> {
+  if (isHttpUrl(updatePath)) {
+    try {
+      const response = await fetch(updatePath, { method: "HEAD" });
+      if (response.ok) {
+        return true;
+      }
+      const fallback = await fetch(updatePath);
+      return fallback.ok;
+    }
+    catch {
+      return false;
+    }
+  }
   try {
     await fs.access(updatePath, fs.constants.F_OK);
     return true;
@@ -168,10 +208,11 @@ export async function getMetadataAsync(updateBundlePath: string): Promise<{
   createdAt: string;
   id: string;
 }> {
-  const metadataPath = path.join(updateBundlePath, "metadata.json");
+  const metadataPath = joinUpdatePath(updateBundlePath, "metadata.json");
 
   try {
-    const metadataContent = await fs.readFile(metadataPath, "utf-8");
+    const metadataBuffer = await readFileBufferAny(metadataPath);
+    const metadataContent = metadataBuffer.toString("utf-8");
     const metadataJson = JSON.parse(metadataContent);
 
     // 尝试从 exup 文件获取哈希作为 ID
@@ -230,31 +271,35 @@ export async function getAssetMetadataAsync(params: {
     baseUrl = process.env.UPDATES_BASE_URL || "http://localhost:9999",
   } = params;
 
-  const fullPath = path.join(updateBundlePath, filePath);
-  const hash = await getFileHashAsync(fullPath);
-  const stats = await fs.stat(fullPath);
+  const fullPath = joinUpdatePath(updateBundlePath, filePath);
+  const assetBuffer = await readFileBufferAny(fullPath);
+  const hash = crypto.createHash("sha256").update(assetBuffer).digest("base64url");
+  const size = assetBuffer.byteLength;
   // 提取资源 key（文件名，不包含扩展名）
   const fileName = path.basename(filePath);
   const key = isLaunchAsset ? fileName.replace(/\.(js|bundle)$/, "") : fileName;
 
   const contentType = getMimeType(filePath, isLaunchAsset);
 
-  // 构建资源 URL - 使用相对于更新目录的路径
-  const assetUrl = new URL("/api/expo-updates/assets", baseUrl);
-  // 使用更新目录的相对路径作为 asset 参数
-  // const relativePath = path.relative(process.cwd(), fullPath);
-  const relativePath = filePath;
-  assetUrl.searchParams.set("asset", relativePath);
-  assetUrl.searchParams.set("runtimeVersion", runtimeVersion);
-  assetUrl.searchParams.set("platform", platform);
+  const assetUrl = isHttpUrl(updateBundlePath)
+    // 远程存储（如 OSS）时，直接使用 metadata 所在目录拼接资源路径
+    ? joinUpdatePath(updateBundlePath, filePath)
+    // 本地存储时，继续走 API assets 端点
+    : (() => {
+        const localAssetUrl = new URL("/api/expo-updates/assets", baseUrl);
+        localAssetUrl.searchParams.set("asset", filePath);
+        localAssetUrl.searchParams.set("runtimeVersion", runtimeVersion);
+        localAssetUrl.searchParams.set("platform", platform);
+        return localAssetUrl.toString();
+      })();
 
   return {
     hash,
     key,
     fileExtension: ext ? `.${ext}` : isLaunchAsset ? ".bundle" : null,
     contentType,
-    url: assetUrl.toString(),
-    size: stats.size,
+    url: assetUrl,
+    size,
   };
 }
 
@@ -264,10 +309,11 @@ export async function getAssetMetadataAsync(params: {
 export async function getExpoConfigAsync(
   updateBundlePath: string,
 ): Promise<any> {
-  const expoConfigPath = path.join(updateBundlePath, "expoConfig.json");
+  const expoConfigPath = joinUpdatePath(updateBundlePath, "expoConfig.json");
 
   try {
-    const configContent = await fs.readFile(expoConfigPath, "utf-8");
+    const configBuffer = await readFileBufferAny(expoConfigPath);
+    const configContent = configBuffer.toString("utf-8");
     return JSON.parse(configContent);
   }
   catch {
@@ -287,10 +333,11 @@ export async function createRollBackDirectiveAsync(
     commitTime: string;
   };
 }> {
-  const rollbackPath = path.join(updateBundlePath, "rollback");
+  const rollbackPath = joinUpdatePath(updateBundlePath, "rollback");
 
   try {
-    const rollbackContent = await fs.readFile(rollbackPath, "utf-8");
+    const rollbackBuffer = await readFileBufferAny(rollbackPath);
+    const rollbackContent = rollbackBuffer.toString("utf-8");
     const rollbackData = JSON.parse(rollbackContent);
 
     return {
@@ -311,8 +358,16 @@ export async function createRollBackDirectiveAsync(
 export async function checkRollbackExists(
   updateBundlePath: string,
 ): Promise<boolean> {
-  const rollbackPath = path.join(updateBundlePath, "rollback");
+  const rollbackPath = joinUpdatePath(updateBundlePath, "rollback");
   try {
+    if (isHttpUrl(rollbackPath)) {
+      const response = await fetch(rollbackPath, { method: "HEAD" });
+      if (response.ok) {
+        return true;
+      }
+      const fallback = await fetch(rollbackPath);
+      return fallback.ok;
+    }
     await fs.access(rollbackPath, fs.constants.F_OK);
     return true;
   }
