@@ -253,12 +253,12 @@ export async function getAssetMetadataAsync(params: {
   isLaunchAsset: boolean;
   baseUrl?: string;
 }): Promise<{
-  hash: string;
+  hash?: string;
   key: string;
-  fileExtension: string | null;
+  fileExtension?: string | null;
   contentType: string;
   url: string;
-  size: number;
+  size?: number;
 }> {
   const {
     updateBundlePath,
@@ -271,10 +271,6 @@ export async function getAssetMetadataAsync(params: {
     baseUrl = process.env.UPDATES_BASE_URL || "http://localhost:9999",
   } = params;
 
-  const fullPath = joinUpdatePath(updateBundlePath, filePath);
-  const assetBuffer = await readFileBufferAny(fullPath);
-  const hash = crypto.createHash("sha256").update(assetBuffer).digest("base64url");
-  const size = assetBuffer.byteLength;
   // 提取资源 key（文件名，不包含扩展名）
   const fileName = path.basename(filePath);
   const key = isLaunchAsset ? fileName.replace(/\.(js|bundle)$/, "") : fileName;
@@ -294,12 +290,10 @@ export async function getAssetMetadataAsync(params: {
       })();
 
   return {
-    hash,
     key,
     fileExtension: ext ? `.${ext}` : isLaunchAsset ? ".bundle" : null,
     contentType,
     url: assetUrl,
-    size,
   };
 }
 
