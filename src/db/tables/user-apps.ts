@@ -1,17 +1,17 @@
-import { index, integer, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
+import { index, mysqlTable, timestamp, unique, varchar } from "drizzle-orm/mysql-core";
 
 import { apps } from "./apps";
 import { users } from "./users";
 
 // ==================== 用户应用关联表 ====================
-export const userApps = sqliteTable("user_apps", {
-  id: text()
+export const userApps = mysqlTable("user_apps", {
+  id: varchar("id", { length: 36 })
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
-  userId: text().notNull().references(() => users.id, { onDelete: "cascade" }),
-  appId: text().notNull().references(() => apps.id, { onDelete: "cascade" }),
-  createdAt: integer({ mode: "timestamp" })
-    .$defaultFn(() => new Date())
+  userId: varchar("user_id", { length: 36 }).notNull().references(() => users.id, { onDelete: "cascade" }),
+  appId: varchar("app_id", { length: 36 }).notNull().references(() => apps.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at")
+    .defaultNow()
     .notNull(),
 }, table => [
   index("user_apps_user_id_idx").on(table.userId),

@@ -32,7 +32,7 @@ export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
   const conditions = [eq(userGroups.appId, appId)];
 
   if (query.search) {
-    // SQLite/Turso 不支持 ILIKE，使用 lower() 函数实现不区分大小写搜索
+    // MySQL 不支持 ILIKE（PostgreSQL 特性），使用 LOWER() 函数实现不区分大小写搜索
     const searchPattern = `%${query.search.toLowerCase()}%`;
     conditions.push(
       sql`LOWER(${userGroups.name}) LIKE ${searchPattern}`,

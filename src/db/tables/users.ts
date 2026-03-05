@@ -1,24 +1,24 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 // ==================== 平台用户表 ====================
-export const users = sqliteTable("users", {
-  id: text()
+export const users = mysqlTable("users", {
+  id: varchar("id", { length: 36 })
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
-  name: text().notNull(),
-  email: text().notNull().unique(),
-  password: text().notNull(), // bcrypt 加密后的密码
-  role: text().notNull().default("app_manager"), // admin, app_manager, viewer
-  status: text().notNull().default("active"), // active, inactive
-  avatar: text(),
-  createdAt: integer({ mode: "timestamp" })
-    .$defaultFn(() => new Date())
+  name: varchar("name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 255 }).notNull().unique(),
+  password: varchar("password", { length: 255 }).notNull(), // bcrypt 加密后的密码
+  role: varchar("role", { length: 50 }).notNull().default("app_manager"), // admin, app_manager, viewer
+  status: varchar("status", { length: 50 }).notNull().default("active"), // active, inactive
+  avatar: text("avatar"),
+  createdAt: timestamp("created_at")
+    .defaultNow()
     .notNull(),
-  updatedAt: integer({ mode: "timestamp" })
-    .$defaultFn(() => new Date())
-    .$onUpdate(() => new Date())
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .onUpdateNow()
     .notNull(),
-  lastLoginAt: integer({ mode: "timestamp" }),
+  lastLoginAt: timestamp("last_login_at"),
 }, table => [
   index("users_email_idx").on(table.email),
 ]);

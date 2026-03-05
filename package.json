@@ -23,7 +23,7 @@
   "dependencies": {
     "@hono/node-server": "^1.18.1",
     "@hono/zod-openapi": "^1.0.2",
-    "@libsql/client": "^0.15.10",
+    "mysql2": "^3.6.0",
     "@scalar/hono-api-reference": "^0.9.13",
     "adm-zip": "^0.5.16",
     "ali-oss": "^6.23.0",

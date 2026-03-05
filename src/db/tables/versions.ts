@@ -1,33 +1,33 @@
-import { index, integer, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
+import { boolean, index, int, mysqlTable, text, timestamp, unique, varchar } from "drizzle-orm/mysql-core";
 
 import { apps } from "./apps";
 import { users } from "./users";
 
 // ==================== 版本表 ====================
-export const versions = sqliteTable("versions", {
-  id: text()
+export const versions = mysqlTable("versions", {
+  id: varchar("id", { length: 36 })
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
-  appId: text().notNull().references(() => apps.id, { onDelete: "cascade" }),
-  version: text().notNull(), // 1.2.0
-  build: text().notNull(), // 构建号，如：100, 101, 102
-  runtimeVersion: text().notNull(), // Runtime 版本
-  name: text().notNull(), // 版本名称
-  description: text(),
-  status: text().notNull().default("draft"), // draft, published, rolled_back
-  fileUrl: text().notNull(),
-  fileSize: integer().notNull(), // bytes
-  checksum: text().notNull(), // sha256:abc123...
-  isMandatory: integer({ mode: "boolean" }).notNull().default(false),
-  publishedAt: integer({ mode: "timestamp" }),
-  rolledBackAt: integer({ mode: "timestamp" }),
-  publishedBy: text().references(() => users.id),
-  createdAt: integer({ mode: "timestamp" })
-    .$defaultFn(() => new Date())
+  appId: varchar("app_id", { length: 36 }).notNull().references(() => apps.id, { onDelete: "cascade" }),
+  version: varchar("version", { length: 50 }).notNull(), // 1.2.0
+  build: varchar("build", { length: 50 }).notNull(), // 构建号，如：100, 101, 102
+  runtimeVersion: varchar("runtime_version", { length: 50 }).notNull(), // Runtime 版本
+  name: varchar("name", { length: 255 }).notNull(), // 版本名称
+  description: text("description"),
+  status: varchar("status", { length: 50 }).notNull().default("draft"), // draft, published, rolled_back
+  fileUrl: text("file_url").notNull(),
+  fileSize: int("file_size").notNull(), // bytes
+  checksum: varchar("checksum", { length: 255 }).notNull(), // sha256:abc123...
+  isMandatory: boolean("is_mandatory").notNull().default(false),
+  publishedAt: timestamp("published_at"),
+  rolledBackAt: timestamp("rolled_back_at"),
+  publishedBy: varchar("published_by", { length: 36 }).references(() => users.id),
+  createdAt: timestamp("created_at")
+    .defaultNow()
     .notNull(),
-  updatedAt: integer({ mode: "timestamp" })
-    .$defaultFn(() => new Date())
-    .$onUpdate(() => new Date())
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .onUpdateNow()
     .notNull(),
 }, table => [
   index("versions_app_id_idx").on(table.appId),

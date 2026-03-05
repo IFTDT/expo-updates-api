@@ -1,17 +1,17 @@
-import { index, integer, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
+import { index, mysqlTable, timestamp, unique, varchar } from "drizzle-orm/mysql-core";
 
 import { appUsers } from "./app-users";
 import { userGroups } from "./user-groups";
 
 // ==================== 用户分组成员表 ====================
-export const userGroupMembers = sqliteTable("user_group_members", {
-  id: text()
+export const userGroupMembers = mysqlTable("user_group_members", {
+  id: varchar("id", { length: 36 })
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
-  groupId: text().notNull().references(() => userGroups.id, { onDelete: "cascade" }),
-  appUserId: text().notNull().references(() => appUsers.id, { onDelete: "cascade" }),
-  createdAt: integer({ mode: "timestamp" })
-    .$defaultFn(() => new Date())
+  groupId: varchar("group_id", { length: 36 }).notNull().references(() => userGroups.id, { onDelete: "cascade" }),
+  appUserId: varchar("app_user_id", { length: 36 }).notNull().references(() => appUsers.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at")
+    .defaultNow()
     .notNull(),
 }, table => [
   index("user_group_members_group_id_idx").on(table.groupId),

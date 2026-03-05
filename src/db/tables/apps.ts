@@ -1,26 +1,26 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 import { users } from "./users";
 
 // ==================== 应用表 ====================
-export const apps = sqliteTable("apps", {
-  id: text()
+export const apps = mysqlTable("apps", {
+  id: varchar("id", { length: 36 })
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
-  name: text().notNull(),
-  appId: text().notNull().unique(), // com.example.app
-  icon: text(),
-  description: text(),
-  status: text().notNull().default("active"), // active, inactive
-  currentVersion: text(), // 当前版本号（文本，向后兼容）
-  currentVersionId: text(), // 当前版本ID（关联到versions表）
-  ownerId: text().notNull().references(() => users.id),
-  createdAt: integer({ mode: "timestamp" })
-    .$defaultFn(() => new Date())
+  name: varchar("name", { length: 255 }).notNull(),
+  appId: varchar("app_id", { length: 255 }).notNull().unique(), // com.example.app
+  icon: text("icon"),
+  description: text("description"),
+  status: varchar("status", { length: 50 }).notNull().default("active"), // active, inactive
+  currentVersion: varchar("current_version", { length: 50 }), // 当前版本号（文本，向后兼容）
+  currentVersionId: varchar("current_version_id", { length: 36 }), // 当前版本ID（关联到versions表）
+  ownerId: varchar("owner_id", { length: 36 }).notNull().references(() => users.id),
+  createdAt: timestamp("created_at")
+    .defaultNow()
     .notNull(),
-  updatedAt: integer({ mode: "timestamp" })
-    .$defaultFn(() => new Date())
-    .$onUpdate(() => new Date())
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .onUpdateNow()
     .notNull(),
 }, table => [
   index("apps_app_id_idx").on(table.appId),

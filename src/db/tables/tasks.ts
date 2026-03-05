@@ -1,16 +1,17 @@
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { boolean, int, mysqlTable, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 // 保留旧的 tasks 表（如果还需要的话）
-export const tasks = sqliteTable("tasks", {
-  id: integer({ mode: "number" })
-    .primaryKey({ autoIncrement: true }),
-  name: text().notNull(),
-  done: integer({ mode: "boolean" })
+export const tasks = mysqlTable("tasks", {
+  id: int("id")
+    .primaryKey()
+    .autoincrement(),
+  name: varchar("name", { length: 500 }).notNull(),
+  done: boolean("done")
     .notNull()
     .default(false),
-  createdAt: integer({ mode: "timestamp" })
-    .$defaultFn(() => new Date()),
-  updatedAt: integer({ mode: "timestamp" })
-    .$defaultFn(() => new Date())
-    .$onUpdate(() => new Date()),
+  createdAt: timestamp("created_at")
+    .defaultNow(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .onUpdateNow(),
 });

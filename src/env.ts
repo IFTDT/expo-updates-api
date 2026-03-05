@@ -15,20 +15,10 @@ const EnvSchema = z.object({
   NODE_ENV: z.string().default("development"),
   PORT: z.coerce.number().default(9999),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]),
-  DATABASE_URL: z.string().refine(
-    (val) => {
-      // 允许 http://, https://, file: 协议
-      try {
-        return true;
-      }
-      catch {
-        // 对于 file: 协议，特殊处理
-        return val.startsWith("file:");
-      }
-    },
-    { message: "DATABASE_URL 必须是有效的 URL" },
+  DATABASE_URL: z.string().url().refine(
+    (val) => val.startsWith("mysql://") || val.startsWith("mysql2://"),
+    { message: "DATABASE_URL 必须是有效的 MySQL 连接字符串（mysql:// 或 mysql2://）" },
   ),
-  DATABASE_AUTH_TOKEN: z.string().optional(),
   JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
   JWT_EXPIRES_IN: z.string().default("1h"),
   JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
@@ -40,16 +30,6 @@ const EnvSchema = z.object({
   OSS_ACCESS_KEY_ID: z.string().optional(),
   OSS_ACCESS_KEY_SECRET: z.string().optional(),
   OSS_ENDPOINT: z.string().optional(),
-}).superRefine((input, ctx) => {
-  if (input.NODE_ENV === "production" && !input.DATABASE_AUTH_TOKEN) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.invalid_type,
-      expected: "string",
-      received: "undefined",
-      path: ["DATABASE_AUTH_TOKEN"],
-      message: "Must be set when NODE_ENV is 'production'",
-    });
-  }
 });
 
 export type env = z.infer<typeof EnvSchema>;

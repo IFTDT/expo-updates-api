@@ -1,28 +1,28 @@
-import { index, integer, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
+import { index, mysqlTable, text, timestamp, unique, varchar } from "drizzle-orm/mysql-core";
 
 import { apps } from "./apps";
 import { versions } from "./versions";
 
 // ==================== 应用用户表 ====================
-export const appUsers = sqliteTable("app_users", {
-  id: text()
+export const appUsers = mysqlTable("app_users", {
+  id: varchar("id", { length: 36 })
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
-  appId: text().notNull().references(() => apps.id, { onDelete: "cascade" }),
-  deviceId: text().notNull(), // 设备ID
-  userId: text(), // 用户ID（可选）
-  platform: text(), // 运行平台：ios 或 android
-  currentVersionId: text().references(() => versions.id, { onDelete: "set null" }), // 当前运行的版本ID
-  targetVersionId: text().references(() => versions.id, { onDelete: "set null" }), // 用户级别的目标版本（优先级最高）
-  lastUpdateAt: integer({ mode: "timestamp" }),
-  deviceInfo: text(), // JSON
-  status: text().notNull().default("online"), // online, offline
-  createdAt: integer({ mode: "timestamp" })
-    .$defaultFn(() => new Date())
+  appId: varchar("app_id", { length: 36 }).notNull().references(() => apps.id, { onDelete: "cascade" }),
+  deviceId: varchar("device_id", { length: 255 }).notNull(), // 设备ID
+  userId: varchar("user_id", { length: 36 }), // 用户ID（可选）
+  platform: varchar("platform", { length: 50 }), // 运行平台：ios 或 android
+  currentVersionId: varchar("current_version_id", { length: 36 }).references(() => versions.id, { onDelete: "set null" }), // 当前运行的版本ID
+  targetVersionId: varchar("target_version_id", { length: 36 }).references(() => versions.id, { onDelete: "set null" }), // 用户级别的目标版本（优先级最高）
+  lastUpdateAt: timestamp("last_update_at"),
+  deviceInfo: text("device_info"), // JSON
+  status: varchar("status", { length: 50 }).notNull().default("online"), // online, offline
+  createdAt: timestamp("created_at")
+    .defaultNow()
     .notNull(),
-  updatedAt: integer({ mode: "timestamp" })
-    .$defaultFn(() => new Date())
-    .$onUpdate(() => new Date())
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .onUpdateNow()
     .notNull(),
 }, table => [
   index("app_users_app_id_idx").on(table.appId),

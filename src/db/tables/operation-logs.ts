@@ -1,23 +1,23 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 import { apps } from "./apps";
 import { users } from "./users";
 
 // ==================== 操作日志表 ====================
-export const operationLogs = sqliteTable("operation_logs", {
-  id: text()
+export const operationLogs = mysqlTable("operation_logs", {
+  id: varchar("id", { length: 36 })
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
-  appId: text().references(() => apps.id, { onDelete: "cascade" }),
-  type: text().notNull(), // update, rollback, delete, etc.
-  action: text().notNull(),
-  targetId: text(),
-  targetType: text(), // version, user, group, etc.
-  status: text().notNull().default("success"), // success, failed
-  details: text(), // JSON
-  userId: text().notNull().references(() => users.id),
-  createdAt: integer({ mode: "timestamp" })
-    .$defaultFn(() => new Date())
+  appId: varchar("app_id", { length: 36 }).references(() => apps.id, { onDelete: "cascade" }),
+  type: varchar("type", { length: 50 }).notNull(), // update, rollback, delete, etc.
+  action: varchar("action", { length: 255 }).notNull(),
+  targetId: varchar("target_id", { length: 36 }),
+  targetType: varchar("target_type", { length: 50 }), // version, user, group, etc.
+  status: varchar("status", { length: 50 }).notNull().default("success"), // success, failed
+  details: text("details"), // JSON
+  userId: varchar("user_id", { length: 36 }).notNull().references(() => users.id),
+  createdAt: timestamp("created_at")
+    .defaultNow()
     .notNull(),
 }, table => [
   index("operation_logs_app_id_idx").on(table.appId),
