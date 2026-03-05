@@ -25,6 +25,50 @@ import {
 
 import type { assetsRoute, manifestRoute } from "./expo-updates.routes";
 
+interface ExpoExtraParams {
+  "x-device-id"?: string;
+  "x-user-id"?: string;
+}
+
+function parseExpoExtraParams(rawHeaderValue?: string): ExpoExtraParams {
+  if (!rawHeaderValue) {
+    return {};
+  }
+
+  const candidates = [rawHeaderValue.trim()];
+  const paramsMatch = rawHeaderValue.match(/(?:^|,)\s*params=(.+)$/i);
+  if (paramsMatch?.[1]) {
+    candidates.unshift(paramsMatch[1].trim());
+  }
+
+  for (const rawCandidate of candidates) {
+    const unquotedCandidate = rawCandidate.startsWith("\"")
+      && rawCandidate.endsWith("\"")
+      ? rawCandidate.slice(1, -1)
+      : rawCandidate;
+    const normalizedCandidate = unquotedCandidate
+      .replaceAll("\\\"", "\"")
+      .trim();
+
+    if (!normalizedCandidate.startsWith("{")) {
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(normalizedCandidate) as Record<string, unknown>;
+      return {
+        "x-device-id": typeof parsed["x-device-id"] === "string" ? parsed["x-device-id"] : undefined,
+        "x-user-id": typeof parsed["x-user-id"] === "string" ? parsed["x-user-id"] : undefined,
+      };
+    }
+    catch {
+      // Ignore malformed header and fallback to other locations.
+    }
+  }
+
+  return {};
+}
+
 /**
  * Manifest 处理函数
  */
@@ -80,8 +124,15 @@ export const manifestHandler: AppRouteHandler<typeof manifestRoute> = async (
   }
 
   const appId = c.req.header("x-app-id") || c.req.query("app-id");
-  const deviceId = c.req.header("x-device-id") || c.req.query("device-id");
-  const userId = c.req.header("x-user-id") || c.req.query("user-id");
+  const extraParams = parseExpoExtraParams(c.req.header("expo-extra-params"));
+  const deviceId
+    = c.req.header("x-device-id")
+      || extraParams["x-device-id"]
+      || c.req.query("device-id");
+  const userId
+    = c.req.header("x-user-id")
+      || extraParams["x-user-id"]
+      || c.req.query("user-id");
 
   const bundleResult = await resolveUpdateBundlePath({
     runtimeVersion,
@@ -486,9 +537,16 @@ export const assetsHandler: AppRouteHandler<typeof assetsRoute> = async (c) => {
 
   // 提取应用包名（从 header 或 query）
   const appId = c.req.header("x-app-id") || query["app-id"];
+  const extraParams = parseExpoExtraParams(c.req.header("expo-extra-params"));
 
-  const deviceId = c.req.header("x-device-id") || query["device-id"];
-  const userId = c.req.header("x-user-id") || query["user-id"];
+  const deviceId
+    = c.req.header("x-device-id")
+      || extraParams["x-device-id"]
+      || query["device-id"];
+  const userId
+    = c.req.header("x-user-id")
+      || extraParams["x-user-id"]
+      || query["user-id"];
 
   const bundleResult = await resolveUpdateBundlePath({
     runtimeVersion,
