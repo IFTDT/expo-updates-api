@@ -4,7 +4,7 @@ import * as HttpStatusCodes from "stoker/http-status-codes";
 import type { AppRouteHandler } from "@/lib/types";
 
 import db from "@/db";
-import { users } from "@/db/schema";
+import { userApps, users } from "@/db/schema";
 import { generateToken, generateTokenPair, verifyPassword, verifyToken } from "@/lib/auth";
 import { errorResponse, successResponse } from "@/lib/response";
 
@@ -16,13 +16,6 @@ export async function login(c: Parameters<AppRouteHandler<LoginRoute>>[0]) {
   // 查找用户
   const user = await db.query.users.findFirst({
     where: eq(users.email, email),
-    with: {
-      apps: {
-        with: {
-          app: true,
-        },
-      },
-    },
   });
 
   if (!user) {
@@ -71,7 +64,13 @@ export async function login(c: Parameters<AppRouteHandler<LoginRoute>>[0]) {
   });
 
   // 获取用户关联的应用ID
-  const appIds = user.apps.map((ua: { appId: string }) => ua.appId);
+  const userAppRows = await db.query.userApps.findMany({
+    where: eq(userApps.userId, user.id),
+    columns: {
+      appId: true,
+    },
+  });
+  const appIds = userAppRows.map(ua => ua.appId);
 
   return successResponse(c, {
     accessToken: tokens.accessToken,
@@ -108,9 +107,6 @@ export async function getMe(c: Parameters<AppRouteHandler<GetMeRoute>>[0]) {
   // 查找用户及其关联的应用
   const user = await db.query.users.findFirst({
     where: eq(users.id, userPayload.userId),
-    with: {
-      apps: true,
-    },
   });
 
   if (!user) {
@@ -123,7 +119,13 @@ export async function getMe(c: Parameters<AppRouteHandler<GetMeRoute>>[0]) {
     );
   }
 
-  const appIds = user.apps.map((ua: { appId: string }) => ua.appId);
+  const userAppRows = await db.query.userApps.findMany({
+    where: eq(userApps.userId, user.id),
+    columns: {
+      appId: true,
+    },
+  });
+  const appIds = userAppRows.map(ua => ua.appId);
 
   return successResponse(c, {
     id: user.id,

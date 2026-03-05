@@ -1,4 +1,5 @@
-import { index, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { sql } from "drizzle-orm";
+import { datetime, index, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 // ==================== 平台用户表 ====================
 export const users = mysqlTable("users", {
@@ -12,13 +13,12 @@ export const users = mysqlTable("users", {
   status: varchar("status", { length: 50 }).notNull().default("active"), // active, inactive
   avatar: text("avatar"),
   createdAt: timestamp("created_at")
-    .defaultNow()
+    .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),
   updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .onUpdateNow()
+    .default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`)
     .notNull(),
-  lastLoginAt: timestamp("last_login_at"),
+  lastLoginAt: datetime("last_login_at"),
 }, table => [
   index("users_email_idx").on(table.email),
 ]);

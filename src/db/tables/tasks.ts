@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { boolean, int, mysqlTable, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 // 保留旧的 tasks 表（如果还需要的话）
@@ -10,8 +11,7 @@ export const tasks = mysqlTable("tasks", {
     .notNull()
     .default(false),
   createdAt: timestamp("created_at")
-    .defaultNow(),
+    .default(sql`CURRENT_TIMESTAMP`),
   updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .onUpdateNow(),
+    .default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`),
 });

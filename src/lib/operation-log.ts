@@ -17,13 +17,13 @@ export interface CreateLogParams {
  */
 export async function createOperationLog(params: CreateLogParams): Promise<void> {
   await db.insert(operationLogs).values({
-    appId: params.appId,
+    appId: params.appId ?? null,
     type: params.type,
     action: params.action,
-    targetId: params.targetId,
-    targetType: params.targetType,
+    targetId: params.targetId ?? null,
+    targetType: params.targetType ?? null,
     status: params.status || "success",
-    details: params.details ? JSON.stringify(params.details) : undefined,
+    details: params.details ? JSON.stringify(params.details) : null,
     userId: params.userId,
   });
 }

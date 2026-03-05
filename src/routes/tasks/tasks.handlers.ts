@@ -17,8 +17,13 @@ export const list: AppRouteHandler<ListRoute> = async (c) => {
 
 export const create: AppRouteHandler<CreateRoute> = async (c) => {
   const task = c.req.valid("json");
-  const [inserted] = await db.insert(tasks).values(task).returning();
-  return c.json(inserted, HttpStatusCodes.OK);
+  const [{ id: insertedId }] = await db.insert(tasks).values(task).$returningId();
+  const inserted = await db.query.tasks.findFirst({
+    where(fields, operators) {
+      return operators.eq(fields.id, insertedId);
+    },
+  });
+  return c.json(inserted!, HttpStatusCodes.OK);
 };
 
 export const getOne: AppRouteHandler<GetOneRoute> = async (c) => {
@@ -64,10 +69,15 @@ export const patch: AppRouteHandler<PatchRoute> = async (c) => {
     );
   }
 
-  const [task] = await db.update(tasks)
+  await db.update(tasks)
     .set(updates)
-    .where(eq(tasks.id, id))
-    .returning();
+    .where(eq(tasks.id, id));
+
+  const task = await db.query.tasks.findFirst({
+    where(fields, operators) {
+      return operators.eq(fields.id, id);
+    },
+  });
 
   if (!task) {
     return c.json(
@@ -83,10 +93,13 @@ export const patch: AppRouteHandler<PatchRoute> = async (c) => {
 
 export const remove: AppRouteHandler<RemoveRoute> = async (c) => {
   const { id } = c.req.valid("param");
-  const result = await db.delete(tasks)
-    .where(eq(tasks.id, id));
+  const existing = await db.query.tasks.findFirst({
+    where(fields, operators) {
+      return operators.eq(fields.id, id);
+    },
+  });
 
-  if (result.rowsAffected === 0) {
+  if (!existing) {
     return c.json(
       {
         message: HttpStatusPhrases.NOT_FOUND,
@@ -94,6 +107,9 @@ export const remove: AppRouteHandler<RemoveRoute> = async (c) => {
       HttpStatusCodes.NOT_FOUND,
     );
   }
+
+  await db.delete(tasks)
+    .where(eq(tasks.id, id));
 
   return c.body(null, HttpStatusCodes.NO_CONTENT);
 };

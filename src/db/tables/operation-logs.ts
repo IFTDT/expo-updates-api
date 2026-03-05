@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 import { apps } from "./apps";
@@ -17,7 +18,7 @@ export const operationLogs = mysqlTable("operation_logs", {
   details: text("details"), // JSON
   userId: varchar("user_id", { length: 36 }).notNull().references(() => users.id),
   createdAt: timestamp("created_at")
-    .defaultNow()
+    .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),
 }, table => [
   index("operation_logs_app_id_idx").on(table.appId),

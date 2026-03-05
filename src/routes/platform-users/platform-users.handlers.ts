@@ -1,4 +1,4 @@
-import { and, count, desc, eq, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 
 import type { AppRouteHandler } from "@/lib/types";
@@ -61,11 +61,20 @@ export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
     limit,
     offset,
     orderBy: [desc(users.createdAt)],
-    with: {
-      apps: {
-        columns: { appId: true },
-      },
-    },
+  });
+
+  const userIds = items.map(item => item.id);
+  const appRelations = userIds.length > 0
+    ? await db.query.userApps.findMany({
+        where: inArray(userApps.userId, userIds),
+        columns: { userId: true, appId: true },
+      })
+    : [];
+  const appIdsByUserId = new Map<string, string[]>();
+  appRelations.forEach((relation) => {
+    const list = appIdsByUserId.get(relation.userId) || [];
+    list.push(relation.appId);
+    appIdsByUserId.set(relation.userId, list);
   });
 
   // 格式化响应
@@ -78,7 +87,7 @@ export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
       status: item.status,
       createdAt: item.createdAt,
       lastLoginAt: item.lastLoginAt || undefined,
-      appIds: item.apps.map((ua: { appId: string }) => ua.appId),
+      appIds: appIdsByUserId.get(item.id) || [],
     };
   });
 
@@ -118,13 +127,27 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
   const hashedPassword = await hashPassword(data.password);
 
   // 创建用户
-  const [newUser] = await db.insert(users).values({
+  const [{ id: newUserId }] = await db.insert(users).values({
     name: data.name,
     email: data.email,
     password: hashedPassword,
     role: data.role,
     status: "active",
-  }).returning();
+  }).$returningId();
+
+  const newUser = await db.query.users.findFirst({
+    where: eq(users.id, newUserId),
+  });
+
+  if (!newUser) {
+    return errorResponse(
+      c,
+      "INTERNAL_ERROR",
+      "用户创建失败",
+      undefined,
+      HttpStatusCodes.INTERNAL_SERVER_ERROR,
+    );
+  }
 
   // 关联应用
   if (data.appIds.length > 0) {

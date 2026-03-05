@@ -10,11 +10,13 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
+  timezone: "Z",
+  charset: "utf8mb4",
 });
 
 const db = drizzle(pool, {
   schema,
-  mode: "default",
+  mode: "planetscale",
   casing: "snake_case",
 });
 

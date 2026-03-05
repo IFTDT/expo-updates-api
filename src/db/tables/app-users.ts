@@ -1,4 +1,5 @@
-import { index, mysqlTable, text, timestamp, unique, varchar } from "drizzle-orm/mysql-core";
+import { sql } from "drizzle-orm";
+import { datetime, index, mysqlTable, text, timestamp, unique, varchar } from "drizzle-orm/mysql-core";
 
 import { apps } from "./apps";
 import { versions } from "./versions";
@@ -14,15 +15,14 @@ export const appUsers = mysqlTable("app_users", {
   platform: varchar("platform", { length: 50 }), // 运行平台：ios 或 android
   currentVersionId: varchar("current_version_id", { length: 36 }).references(() => versions.id, { onDelete: "set null" }), // 当前运行的版本ID
   targetVersionId: varchar("target_version_id", { length: 36 }).references(() => versions.id, { onDelete: "set null" }), // 用户级别的目标版本（优先级最高）
-  lastUpdateAt: timestamp("last_update_at"),
+  lastUpdateAt: datetime("last_update_at"),
   deviceInfo: text("device_info"), // JSON
   status: varchar("status", { length: 50 }).notNull().default("online"), // online, offline
   createdAt: timestamp("created_at")
-    .defaultNow()
+    .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),
   updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .onUpdateNow()
+    .default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`)
     .notNull(),
 }, table => [
   index("app_users_app_id_idx").on(table.appId),

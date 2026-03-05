@@ -1,4 +1,4 @@
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, inArray } from "drizzle-orm";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 
 import type { AppRouteHandler } from "@/lib/types";
@@ -50,15 +50,16 @@ export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
     limit,
     offset,
     orderBy: [desc(updateTasks.createdAt)],
-    with: {
-      version: {
-        columns: {
-          id: true,
-          version: true,
-        },
-      },
-    },
   });
+
+  const versionIds = items.map(item => item.versionId);
+  const versionRows = versionIds.length > 0
+    ? await db.query.versions.findMany({
+        where: inArray(versions.id, versionIds),
+        columns: { id: true, version: true },
+      })
+    : [];
+  const versionMap = new Map(versionRows.map(v => [v.id, v]));
 
   // 格式化响应
   const formattedItems = items.map((item) => {
@@ -66,10 +67,10 @@ export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
       id: item.id,
       appId: item.appId,
       versionId: item.versionId,
-      version: item.version
+      version: versionMap.get(item.versionId)
         ? {
-            id: item.version.id,
-            version: item.version.version,
+            id: versionMap.get(item.versionId)!.id,
+            version: versionMap.get(item.versionId)!.version,
           }
         : undefined,
       type: item.type,
@@ -176,16 +177,30 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
 
   // 创建更新任务
   const scheduledAt = data.scheduledAt ? new Date(data.scheduledAt) : null;
-  const [task] = await db.insert(updateTasks).values({
+  const [{ id: taskId }] = await db.insert(updateTasks).values({
     appId,
     versionId: data.versionId,
     type: data.type,
     status: scheduledAt ? "pending" : "pending",
     scheduledAt,
-    targetUserIds: data.targetUserIds.length > 0 ? JSON.stringify(data.targetUserIds) : undefined,
-    targetGroupIds: data.targetGroupIds.length > 0 ? JSON.stringify(data.targetGroupIds) : undefined,
+    targetUserIds: data.targetUserIds.length > 0 ? JSON.stringify(data.targetUserIds) : null,
+    targetGroupIds: data.targetGroupIds.length > 0 ? JSON.stringify(data.targetGroupIds) : null,
     createdBy: userPayload.userId,
-  }).returning();
+  }).$returningId();
+
+  const task = await db.query.updateTasks.findFirst({
+    where: eq(updateTasks.id, taskId),
+  });
+
+  if (!task) {
+    return errorResponse(
+      c,
+      "INTERNAL_ERROR",
+      "创建更新任务失败",
+      undefined,
+      HttpStatusCodes.INTERNAL_SERVER_ERROR,
+    );
+  }
 
   return successResponse(
     c,

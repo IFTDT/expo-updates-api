@@ -263,13 +263,13 @@ export const operationLoggerMiddleware = createMiddleware<AppBindings>(
     // 异步记录日志（不阻塞响应）
     db.insert(operationLogs)
       .values({
-        appId: appId || undefined,
+        appId: appId || null,
         type,
         action,
-        targetId: targetId || undefined,
-        targetType: targetType || undefined,
+        targetId: targetId || null,
+        targetType: targetType || null,
         status,
-        details: JSON.stringify(details),
+        details: JSON.stringify(details) || null,
         userId: user.userId,
       })
       .catch((error) => {

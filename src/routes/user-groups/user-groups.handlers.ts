@@ -4,7 +4,7 @@ import * as HttpStatusCodes from "stoker/http-status-codes";
 import type { AppRouteHandler } from "@/lib/types";
 
 import db from "@/db";
-import { apps, userGroupMembers, userGroups, versions } from "@/db/schema";
+import { appUsers, apps, userGroupMembers, userGroups, versions } from "@/db/schema";
 import { errorResponse, successResponse } from "@/lib/response";
 
 import type { AddUsersRoute, CreateRoute, GetOneRoute, ListRoute, RemoveRoute, RemoveUsersRoute, SetTargetVersionRoute, UpdateRoute } from "./user-groups.routes";
@@ -45,27 +45,30 @@ export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
   const groups = await db.query.userGroups.findMany({
     where,
     orderBy: [userGroups.createdAt],
-    with: {
-      members: {
-        with: {
-          appUser: {
-            columns: {
-              id: true,
-            },
-          },
-        },
-      },
-    },
+  });
+
+  const groupIds = groups.map(group => group.id);
+  const members = groupIds.length > 0
+    ? await db.query.userGroupMembers.findMany({
+        where: inArray(userGroupMembers.groupId, groupIds),
+        columns: { groupId: true, appUserId: true },
+      })
+    : [];
+  const membersByGroup = new Map<string, string[]>();
+  members.forEach((member) => {
+    const list = membersByGroup.get(member.groupId) || [];
+    list.push(member.appUserId);
+    membersByGroup.set(member.groupId, list);
   });
 
   // 格式化响应
   const formattedItems = groups.map((group) => {
-    const userIds = group.members.map((m: { appUser: { id: string } }) => m.appUser.id);
+    const userIds = membersByGroup.get(group.id) || [];
     return {
       id: group.id,
       name: group.name,
       description: group.description,
-      userCount: group.members.length,
+      userCount: userIds.length,
       userIds,
       createdAt: group.createdAt,
       updatedAt: group.updatedAt,
@@ -84,19 +87,6 @@ export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
   // 验证分组是否存在
   const group = await db.query.userGroups.findFirst({
     where: and(eq(userGroups.id, id), eq(userGroups.appId, appId)),
-    with: {
-      members: {
-        with: {
-          appUser: {
-            columns: {
-              id: true,
-              userId: true,
-              deviceId: true,
-            },
-          },
-        },
-      },
-    },
   });
 
   if (!group) {
@@ -109,18 +99,29 @@ export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
     );
   }
 
-  const userIds = group.members.map((m: { appUser: { id: string } }) => m.appUser.id);
-  const users = group.members.map((m: { appUser: { id: string; userId: string | null; deviceId: string } }) => ({
-    id: m.appUser.id,
-    userId: m.appUser.userId || undefined,
-    deviceId: m.appUser.deviceId,
+  const members = await db.query.userGroupMembers.findMany({
+    where: eq(userGroupMembers.groupId, id),
+    columns: { appUserId: true },
+  });
+  const memberIds = members.map(member => member.appUserId);
+  const appUserRows = memberIds.length > 0
+    ? await db.query.appUsers.findMany({
+        where: inArray(appUsers.id, memberIds),
+        columns: { id: true, userId: true, deviceId: true },
+      })
+    : [];
+  const userIds = appUserRows.map(row => row.id);
+  const users = appUserRows.map(row => ({
+    id: row.id,
+    userId: row.userId || undefined,
+    deviceId: row.deviceId,
   }));
 
   return successResponse(c, {
     id: group.id,
     name: group.name,
     description: group.description,
-    userCount: group.members.length,
+    userCount: appUserRows.length,
     userIds,
     users,
     createdAt: group.createdAt,
@@ -159,12 +160,26 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
   }
 
   // 创建分组
-  const [newGroup] = await db.insert(userGroups).values({
+  const [{ id: newGroupId }] = await db.insert(userGroups).values({
     appId,
     name: data.name,
-    description: data.description,
+    description: data.description ?? null,
     createdBy: userPayload.userId,
-  }).returning();
+  }).$returningId();
+
+  const newGroup = await db.query.userGroups.findFirst({
+    where: eq(userGroups.id, newGroupId),
+  });
+
+  if (!newGroup) {
+    return errorResponse(
+      c,
+      "INTERNAL_ERROR",
+      "创建分组失败",
+      undefined,
+      HttpStatusCodes.INTERNAL_SERVER_ERROR,
+    );
+  }
 
   // 添加用户到分组
   if (data.userIds.length > 0) {
@@ -239,19 +254,20 @@ export async function update(c: Parameters<AppRouteHandler<UpdateRoute>>[0]) {
   }
 
   // 获取更新后的分组信息
+  const memberCountResult = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(userGroupMembers)
+    .where(eq(userGroupMembers.groupId, id));
+  const memberCount = memberCountResult[0]?.count || 0;
+
   const updatedGroup = await db.query.userGroups.findFirst({
     where: eq(userGroups.id, id),
-    with: {
-      members: {
-        columns: { id: true },
-      },
-    },
   });
 
   return successResponse(c, {
     id: updatedGroup!.id,
     name: updatedGroup!.name,
-    userCount: updatedGroup!.members.length,
+    userCount: memberCount,
     updatedAt: updatedGroup!.updatedAt,
   });
 }
@@ -323,18 +339,15 @@ export async function addUsers(c: Parameters<AppRouteHandler<AddUsersRoute>>[0])
   }
 
   // 获取更新后的成员数量
-  const updatedGroup = await db.query.userGroups.findFirst({
-    where: eq(userGroups.id, id),
-    with: {
-      members: {
-        columns: { id: true },
-      },
-    },
-  });
+  const memberCountResult = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(userGroupMembers)
+    .where(eq(userGroupMembers.groupId, id));
+  const memberCount = memberCountResult[0]?.count || 0;
 
   return successResponse(c, {
     addedCount,
-    userCount: updatedGroup!.members.length,
+    userCount: memberCount,
   });
 }
 
@@ -369,18 +382,15 @@ export async function removeUsers(c: Parameters<AppRouteHandler<RemoveUsersRoute
   }
 
   // 获取更新后的成员数量
-  const updatedGroup = await db.query.userGroups.findFirst({
-    where: eq(userGroups.id, id),
-    with: {
-      members: {
-        columns: { id: true },
-      },
-    },
-  });
+  const memberCountResult = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(userGroupMembers)
+    .where(eq(userGroupMembers.groupId, id));
+  const memberCount = memberCountResult[0]?.count || 0;
 
   return successResponse(c, {
     removedCount: data.userIds.length,
-    userCount: updatedGroup!.members.length,
+    userCount: memberCount,
   });
 }
 
@@ -419,13 +429,26 @@ export async function setTargetVersion(c: Parameters<AppRouteHandler<SetTargetVe
   }
 
   // 更新用户组的目标版本ID
-  const [updatedGroup] = await db.update(userGroups)
+  await db.update(userGroups)
     .set({
       targetVersionId: versionId,
       updatedAt: new Date(),
     })
-    .where(eq(userGroups.id, id))
-    .returning();
+    .where(eq(userGroups.id, id));
+
+  const updatedGroup = await db.query.userGroups.findFirst({
+    where: eq(userGroups.id, id),
+  });
+
+  if (!updatedGroup) {
+    return errorResponse(
+      c,
+      "INTERNAL_ERROR",
+      "更新用户组目标版本失败",
+      undefined,
+      HttpStatusCodes.INTERNAL_SERVER_ERROR,
+    );
+  }
 
   return successResponse(c, {
     id: updatedGroup.id,

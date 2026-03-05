@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 import { apps } from "./apps";
@@ -15,11 +16,10 @@ export const userGroups = mysqlTable("user_groups", {
   targetVersionId: varchar("target_version_id", { length: 36 }).references(() => versions.id, { onDelete: "set null" }), // 分组级别的目标版本（优先级中等）
   createdBy: varchar("created_by", { length: 36 }).notNull().references(() => users.id),
   createdAt: timestamp("created_at")
-    .defaultNow()
+    .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),
   updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .onUpdateNow()
+    .default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`)
     .notNull(),
 }, table => [
   index("user_groups_app_id_idx").on(table.appId),

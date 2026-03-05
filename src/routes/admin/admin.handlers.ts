@@ -60,13 +60,27 @@ export async function createAdmin(c: Parameters<AppRouteHandler<CreateAdminRoute
   const hashedPassword = await hashPassword(data.password);
 
   // 创建管理员用户
-  const [newAdmin] = await db.insert(users).values({
+  const [{ id: newAdminId }] = await db.insert(users).values({
     name: data.name,
     email: data.email,
     password: hashedPassword,
     role: "admin",
     status: "active",
-  }).returning();
+  }).$returningId();
+
+  const newAdmin = await db.query.users.findFirst({
+    where: eq(users.id, newAdminId),
+  });
+
+  if (!newAdmin) {
+    return errorResponse(
+      c,
+      "INTERNAL_ERROR",
+      "管理员创建失败",
+      undefined,
+      HttpStatusCodes.INTERNAL_SERVER_ERROR,
+    );
+  }
 
   return successResponse(
     c,

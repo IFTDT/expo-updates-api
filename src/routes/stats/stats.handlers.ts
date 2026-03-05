@@ -41,24 +41,25 @@ export async function getAppStats(c: Parameters<AppRouteHandler<GetAppStatsRoute
   // 获取所有用户（关联版本信息）
   const allUsers = await db.query.appUsers.findMany({
     where: eq(appUsers.appId, appId),
-    columns: { status: true },
-    with: {
-      currentVersion: {
-        columns: {
-          id: true,
-          version: true,
-          build: true,
-          runtimeVersion: true,
-        },
-      },
-    },
+    columns: { status: true, currentVersionId: true },
   });
+  const currentVersionIds = allUsers
+    .map(user => user.currentVersionId)
+    .filter((id): id is string => Boolean(id));
+  const currentVersions = currentVersionIds.length > 0
+    ? await db.query.versions.findMany({
+        where: inArray(versions.id, currentVersionIds),
+        columns: { id: true, version: true, build: true, runtimeVersion: true },
+      })
+    : [];
+  const versionMap = new Map(currentVersions.map(version => [version.id, version]));
 
   // 获取版本分布（按版本号分组，但保留 build 和 runtimeVersion 信息）
   const versionCounts = new Map<string, { count: number; build: string; runtimeVersion: string }>();
   allUsers.forEach((user) => {
-    if (user.currentVersion?.version) {
-      const versionKey = user.currentVersion.version;
+    const currentVersion = user.currentVersionId ? versionMap.get(user.currentVersionId) : null;
+    if (currentVersion?.version) {
+      const versionKey = currentVersion.version;
       const existing = versionCounts.get(versionKey);
       if (existing) {
         existing.count += 1;
@@ -66,8 +67,8 @@ export async function getAppStats(c: Parameters<AppRouteHandler<GetAppStatsRoute
       else {
         versionCounts.set(versionKey, {
           count: 1,
-          build: user.currentVersion.build,
-          runtimeVersion: user.currentVersion.runtimeVersion,
+          build: currentVersion.build,
+          runtimeVersion: currentVersion.runtimeVersion,
         });
       }
     }
@@ -170,23 +171,25 @@ export async function getVersionDistribution(c: Parameters<AppRouteHandler<GetVe
   // 获取所有用户（关联版本信息）
   const allUsers = await db.query.appUsers.findMany({
     where: eq(appUsers.appId, appId),
-    with: {
-      currentVersion: {
-        columns: {
-          id: true,
-          version: true,
-          build: true,
-          runtimeVersion: true,
-        },
-      },
-    },
+    columns: { currentVersionId: true },
   });
+  const currentVersionIds = allUsers
+    .map(user => user.currentVersionId)
+    .filter((id): id is string => Boolean(id));
+  const currentVersions = currentVersionIds.length > 0
+    ? await db.query.versions.findMany({
+        where: inArray(versions.id, currentVersionIds),
+        columns: { id: true, version: true, build: true, runtimeVersion: true },
+      })
+    : [];
+  const versionMap = new Map(currentVersions.map(version => [version.id, version]));
 
   // 统计版本分布（按版本号分组，但保留 build 和 runtimeVersion 信息）
   const versionCounts = new Map<string, { count: number; build: string; runtimeVersion: string }>();
   allUsers.forEach((user) => {
-    if (user.currentVersion?.version) {
-      const versionKey = user.currentVersion.version;
+    const currentVersion = user.currentVersionId ? versionMap.get(user.currentVersionId) : null;
+    if (currentVersion?.version) {
+      const versionKey = currentVersion.version;
       const existing = versionCounts.get(versionKey);
       if (existing) {
         existing.count += 1;
@@ -194,8 +197,8 @@ export async function getVersionDistribution(c: Parameters<AppRouteHandler<GetVe
       else {
         versionCounts.set(versionKey, {
           count: 1,
-          build: user.currentVersion.build,
-          runtimeVersion: user.currentVersion.runtimeVersion,
+          build: currentVersion.build,
+          runtimeVersion: currentVersion.runtimeVersion,
         });
       }
     }

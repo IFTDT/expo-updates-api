@@ -7,7 +7,7 @@ import path from "node:path";
 import type { AppRouteHandler } from "@/lib/types";
 
 import db from "@/db";
-import { apps, appUsers, updateTasks, userGroupMembers, versions } from "@/db/schema";
+import { apps, appUsers, updateTasks, userGroupMembers, userGroups, versions } from "@/db/schema";
 import {
   checkRollbackExists,
   convertSHA256HashToUUID,
@@ -776,22 +776,25 @@ async function resolveUpdateBundlePath(
   else if (appUser) {
     const userGroupMember = await db.query.userGroupMembers.findFirst({
       where: eq(userGroupMembers.appUserId, appUser.id),
-      with: {
-        group: {
-          columns: {
-            id: true,
-            targetVersionId: true,
-            appId: true,
-          },
-        },
-      },
+      columns: { groupId: true },
     });
 
-    if (
-      userGroupMember?.group?.targetVersionId
-      && userGroupMember.group.appId === app.id
-    ) {
-      targetVersionId = userGroupMember.group.targetVersionId;
+    if (userGroupMember) {
+      const group = await db.query.userGroups.findFirst({
+        where: eq(userGroups.id, userGroupMember.groupId),
+        columns: {
+          id: true,
+          targetVersionId: true,
+          appId: true,
+        },
+      });
+
+      if (
+        group?.targetVersionId
+        && group.appId === app.id
+      ) {
+        targetVersionId = group.targetVersionId;
+      }
     }
   }
 
@@ -883,7 +886,7 @@ async function resolveUpdateBundlePath(
     }
     else {
       // 插入新用户
-      const [newUser] = await db
+      const [{ id: newUserId }] = await db
         .insert(appUsers)
         .values({
           appId: app.id,
@@ -895,8 +898,11 @@ async function resolveUpdateBundlePath(
           lastUpdateAt: new Date(),
           status: "online",
         })
-        .returning();
-      appUser = newUser;
+        .$returningId();
+      const newUser = await db.query.appUsers.findFirst({
+        where: eq(appUsers.id, newUserId),
+      });
+      appUser = newUser ?? null;
     }
   }
 

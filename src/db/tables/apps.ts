@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 import { users } from "./users";
@@ -16,11 +17,10 @@ export const apps = mysqlTable("apps", {
   currentVersionId: varchar("current_version_id", { length: 36 }), // 当前版本ID（关联到versions表）
   ownerId: varchar("owner_id", { length: 36 }).notNull().references(() => users.id),
   createdAt: timestamp("created_at")
-    .defaultNow()
+    .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),
   updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .onUpdateNow()
+    .default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`)
     .notNull(),
 }, table => [
   index("apps_app_id_idx").on(table.appId),

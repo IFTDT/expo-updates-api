@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 
 import db from "@/db";
@@ -54,10 +54,11 @@ export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
   }
 
   if (query.search) {
+    const searchPattern = `%${query.search.toLowerCase()}%`;
     conditions.push(
       or(
-        ilike(operationLogs.action, `%${query.search}%`),
-        ilike(operationLogs.type, `%${query.search}%`),
+        sql`LOWER(${operationLogs.action}) LIKE ${searchPattern}`,
+        sql`LOWER(${operationLogs.type}) LIKE ${searchPattern}`,
       )!,
     );
   }
@@ -74,15 +75,16 @@ export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
     limit,
     offset,
     orderBy: [desc(operationLogs.createdAt)],
-    with: {
-      user: {
-        columns: {
-          id: true,
-          name: true,
-        },
-      },
-    },
   });
+
+  const userIds = items.map(item => item.userId);
+  const userRows = userIds.length > 0
+    ? await db.query.users.findMany({
+        where: inArray(users.id, userIds),
+        columns: { id: true, name: true },
+      })
+    : [];
+  const userMap = new Map(userRows.map(u => [u.id, u]));
 
   // 格式化响应
   const formattedItems = items.map((item) => {
@@ -105,9 +107,9 @@ export const list = async (c: Parameters<AppRouteHandler<ListRoute>>[0]) => {
       status: item.status,
       details,
       userId: item.userId,
-      user: item.user ? {
-        id: item.user.id,
-        name: item.user.name,
+      user: userMap.get(item.userId) ? {
+        id: userMap.get(item.userId)!.id,
+        name: userMap.get(item.userId)!.name,
       } : undefined,
       createdAt: item.createdAt,
     };
@@ -122,15 +124,6 @@ export const getOne = async (c: Parameters<AppRouteHandler<GetOneRoute>>[0]) => 
   // 验证日志是否存在
   const log = await db.query.operationLogs.findFirst({
     where: and(eq(operationLogs.id, id), eq(operationLogs.appId, appId)),
-    with: {
-      user: {
-        columns: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
-    },
   });
 
   if (!log) {
@@ -142,6 +135,11 @@ export const getOne = async (c: Parameters<AppRouteHandler<GetOneRoute>>[0]) => 
       HttpStatusCodes.NOT_FOUND,
     );
   }
+
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, log.userId),
+    columns: { id: true, name: true, email: true },
+  });
 
   // 解析details
   let details: Record<string, unknown> | undefined;
@@ -163,10 +161,10 @@ export const getOne = async (c: Parameters<AppRouteHandler<GetOneRoute>>[0]) => 
     status: log.status,
     details,
     userId: log.userId,
-    user: log.user ? {
-      id: log.user.id,
-      name: log.user.name,
-      email: log.user.email,
+    user: user ? {
+      id: user.id,
+      name: user.name,
+      email: user.email,
     } : undefined,
     createdAt: log.createdAt,
   });
@@ -216,16 +214,16 @@ export const exportLogs = async (c: Parameters<AppRouteHandler<ExportLogsRoute>>
   const logs = await db.query.operationLogs.findMany({
     where,
     orderBy: [desc(operationLogs.createdAt)],
-    with: {
-      user: {
-        columns: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
-    },
   });
+
+  const exportUserIds = logs.map(log => log.userId);
+  const exportUsers = exportUserIds.length > 0
+    ? await db.query.users.findMany({
+        where: inArray(users.id, exportUserIds),
+        columns: { id: true, name: true, email: true },
+      })
+    : [];
+  const exportUserMap = new Map(exportUsers.map(u => [u.id, u]));
 
   // 生成CSV或XLSX文件
   if (query.format === "csv") {
@@ -237,7 +235,7 @@ export const exportLogs = async (c: Parameters<AppRouteHandler<ExportLogsRoute>>
       log.targetId || "",
       log.targetType || "",
       log.status,
-      log.user?.name || "",
+      exportUserMap.get(log.userId)?.name || "",
       log.createdAt.toISOString(),
     ]);
 

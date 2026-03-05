@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, mysqlTable, timestamp, unique, varchar } from "drizzle-orm/mysql-core";
 
 import { apps } from "./apps";
@@ -11,7 +12,7 @@ export const userApps = mysqlTable("user_apps", {
   userId: varchar("user_id", { length: 36 }).notNull().references(() => users.id, { onDelete: "cascade" }),
   appId: varchar("app_id", { length: 36 }).notNull().references(() => apps.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at")
-    .defaultNow()
+    .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),
 }, table => [
   index("user_apps_user_id_idx").on(table.userId),

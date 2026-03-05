@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, int, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 import { apps } from "./apps";
@@ -18,11 +19,10 @@ export const uploads = mysqlTable("uploads", {
   totalBytes: int("total_bytes").notNull(),
   uploadedBy: varchar("uploaded_by", { length: 36 }).notNull().references(() => users.id),
   createdAt: timestamp("created_at")
-    .defaultNow()
+    .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),
   updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .onUpdateNow()
+    .default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`)
     .notNull(),
 }, table => [
   index("uploads_app_id_idx").on(table.appId),

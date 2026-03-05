@@ -4,7 +4,7 @@ import * as HttpStatusCodes from "stoker/http-status-codes";
 import type { AppRouteHandler } from "@/lib/types";
 
 import db from "@/db";
-import { apps, userApps, versions } from "@/db/schema";
+import { appUsers, apps, userApps, users, versions } from "@/db/schema";
 import { errorResponse, paginationResponse, successResponse } from "@/lib/response";
 
 import type { CreateRoute, GetOneRoute, ListRoute, RemoveRoute, SetCurrentVersionRoute, UpdateRoute } from "./apps.routes";
@@ -66,24 +66,19 @@ export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
     limit,
     offset,
     orderBy: [desc(apps.updatedAt)],
-    with: {
-      owner: {
-        columns: {
-          id: true,
-          name: true,
-        },
-      },
-      versions: {
-        columns: { id: true },
-      },
-      appUsers: {
-        columns: { id: true },
-      },
-    },
   });
 
   // 格式化响应
-  const formattedItems = items.map((item) => {
+  const formattedItems = await Promise.all(items.map(async (item) => {
+    const owner = await db.query.users.findFirst({
+      where: eq(users.id, item.ownerId),
+      columns: { id: true, name: true },
+    });
+    const versionCountResult = await db.select({ count: count() }).from(versions).where(eq(versions.appId, item.id));
+    const appUserCountResult = await db.select({ count: count() }).from(appUsers).where(eq(appUsers.appId, item.id));
+    const updateCount = versionCountResult[0]?.count || 0;
+    const userCount = appUserCountResult[0]?.count || 0;
+
     return {
       id: item.id,
       name: item.name,
@@ -92,19 +87,19 @@ export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
       description: item.description,
       status: item.status,
       currentVersion: item.currentVersion,
-      userCount: item.appUsers?.length || 0,
-      updateCount: item.versions?.length || 0,
+      userCount,
+      updateCount,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
       ownerId: item.ownerId,
-      owner: item.owner
+      owner: owner
         ? {
-            id: item.owner.id,
-            name: item.owner.name,
+            id: owner.id,
+            name: owner.name,
           }
         : undefined,
     };
-  });
+  }));
 
   return paginationResponse(c, formattedItems, page, limit, total);
 }
@@ -114,21 +109,6 @@ export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
 
   const app = await db.query.apps.findFirst({
     where: eq(apps.id, id),
-    with: {
-      owner: {
-        columns: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
-      versions: {
-        columns: { id: true },
-      },
-      appUsers: {
-        columns: { id: true },
-      },
-    },
   });
 
   if (!app) {
@@ -141,6 +121,15 @@ export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
     );
   }
 
+  const owner = await db.query.users.findFirst({
+    where: eq(users.id, app.ownerId),
+    columns: { id: true, name: true, email: true },
+  });
+  const versionCountResult = await db.select({ count: count() }).from(versions).where(eq(versions.appId, app.id));
+  const appUserCountResult = await db.select({ count: count() }).from(appUsers).where(eq(appUsers.appId, app.id));
+  const updateCount = versionCountResult[0]?.count || 0;
+  const userCount = appUserCountResult[0]?.count || 0;
+
   return successResponse(c, {
     id: app.id,
     name: app.name,
@@ -149,17 +138,17 @@ export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
     description: app.description,
     status: app.status,
     currentVersion: app.currentVersion,
-    userCount: app.appUsers?.length || 0,
-    updateCount: app.versions?.length || 0,
-    versions: app.versions?.length || 0,
+    userCount,
+    updateCount,
+    versions: updateCount,
     createdAt: app.createdAt,
     updatedAt: app.updatedAt,
     ownerId: app.ownerId,
-    owner: app.owner
+    owner: owner
       ? {
-          id: app.owner.id,
-          name: app.owner.name,
-          email: app.owner.email,
+          id: owner.id,
+          name: owner.name,
+          email: owner.email,
         }
       : undefined,
   });
@@ -195,14 +184,30 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
   }
 
   // 创建应用
-  const [newApp] = await db.insert(apps).values({
+  const [{ id: newAppId }] = await db.insert(apps).values({
     name: data.name,
     appId: data.appId,
-    description: data.description,
-    icon: data.icon,
+    description: data.description ?? null,
+    icon: data.icon ?? null,
     ownerId: userPayload.userId,
     status: "active",
-  }).returning();
+    currentVersion: null,
+    currentVersionId: null,
+  }).$returningId();
+
+  const newApp = await db.query.apps.findFirst({
+    where: eq(apps.id, newAppId),
+  });
+
+  if (!newApp) {
+    return errorResponse(
+      c,
+      "INTERNAL_ERROR",
+      "应用创建失败",
+      undefined,
+      HttpStatusCodes.INTERNAL_SERVER_ERROR,
+    );
+  }
 
   // 创建用户应用关联（应用创建者自动关联）
   await db.insert(userApps).values({
@@ -243,13 +248,33 @@ export async function update(c: Parameters<AppRouteHandler<UpdateRoute>>[0]) {
   }
 
   // 更新应用
-  const [updatedApp] = await db.update(apps)
-    .set({
-      ...data,
-      updatedAt: new Date(),
-    })
-    .where(eq(apps.id, id))
-    .returning();
+  const updateData: Partial<typeof apps.$inferInsert> = {
+    updatedAt: new Date(),
+  };
+  if (data.name !== undefined)
+    updateData.name = data.name;
+  if (data.description !== undefined)
+    updateData.description = data.description ?? null;
+  if (data.status !== undefined)
+    updateData.status = data.status;
+
+  await db.update(apps)
+    .set(updateData)
+    .where(eq(apps.id, id));
+
+  const updatedApp = await db.query.apps.findFirst({
+    where: eq(apps.id, id),
+  });
+
+  if (!updatedApp) {
+    return errorResponse(
+      c,
+      "INTERNAL_ERROR",
+      "应用更新失败",
+      undefined,
+      HttpStatusCodes.INTERNAL_SERVER_ERROR,
+    );
+  }
 
   return successResponse(c, {
     id: updatedApp.id,
@@ -340,14 +365,27 @@ export async function setCurrentVersion(c: Parameters<AppRouteHandler<SetCurrent
   }
 
   // 更新应用的最新版本ID
-  const [updatedApp] = await db.update(apps)
+  await db.update(apps)
     .set({
       currentVersionId: versionId,
       currentVersion: version.version, // 同时更新文本版本号以保持兼容
       updatedAt: new Date(),
     })
-    .where(eq(apps.id, id))
-    .returning();
+    .where(eq(apps.id, id));
+
+  const updatedApp = await db.query.apps.findFirst({
+    where: eq(apps.id, id),
+  });
+
+  if (!updatedApp) {
+    return errorResponse(
+      c,
+      "INTERNAL_ERROR",
+      "应用更新失败",
+      undefined,
+      HttpStatusCodes.INTERNAL_SERVER_ERROR,
+    );
+  }
 
   return successResponse(c, {
     id: updatedApp.id,

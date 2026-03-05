@@ -119,7 +119,7 @@ export async function upload(c: Parameters<AppRouteHandler<UploadRoute>>[0]) {
     const fileUrl = `/uploads/${appId}/${timestamp}_${safeFileName}`;
 
     // 创建上传记录
-    const [uploadRecord] = await db.insert(uploads).values({
+    const [{ id: uploadId }] = await db.insert(uploads).values({
       appId,
       fileUrl,
       fileSize: file.size,
@@ -129,13 +129,13 @@ export async function upload(c: Parameters<AppRouteHandler<UploadRoute>>[0]) {
       uploadedBytes: file.size,
       totalBytes: file.size,
       uploadedBy: userPayload.userId,
-    }).returning();
+    }).$returningId();
 
     return successResponse(c, {
       fileUrl,
       fileSize: file.size,
       checksum,
-      uploadId: uploadRecord.id,
+      uploadId,
     });
   }
   catch (error) {

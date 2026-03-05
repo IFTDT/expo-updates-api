@@ -1,82 +1,12 @@
 {
   "version": "7",
-  "dialect": "sqlite",
+  "dialect": "mysql",
   "entries": [
     {
       "idx": 0,
-      "version": "6",
-      "when": 1728133964232,
-      "tag": "0000_same_squadron_sinister",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1761892363719,
-      "tag": "0001_nostalgic_madame_masque",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1762951776546,
-      "tag": "0002_flaky_nightcrawler",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1762999309591,
-      "tag": "0003_ordinary_victor_mancha",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1763000837498,
-      "tag": "0004_ancient_red_skull",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1763002460597,
-      "tag": "0005_optimal_bucky",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1763084328504,
-      "tag": "0006_complete_dormammu",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1763085738548,
-      "tag": "0007_fat_selene",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "6",
-      "when": 1763090353447,
-      "tag": "0008_flashy_ravenous",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "6",
-      "when": 1763093070969,
-      "tag": "0009_happy_doctor_strange",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "6",
-      "when": 1772521829900,
-      "tag": "0010_nosy_guardsmen",
+      "version": "5",
+      "when": 1772677466930,
+      "tag": "0000_hot_mantis",
       "breakpoints": true
     }
   ]

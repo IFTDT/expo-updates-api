@@ -1,4 +1,4 @@
-import { and, count, desc, eq, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import * as HttpStatusCodes from "stoker/http-status-codes";
 
 import type { AppRouteHandler } from "@/lib/types";
@@ -72,17 +72,18 @@ export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
     limit,
     offset,
     orderBy: [desc(appUsers.lastUpdateAt)],
-    with: {
-      currentVersion: {
-        columns: {
-          id: true,
-          version: true,
-          build: true,
-          runtimeVersion: true,
-        },
-      },
-    },
   });
+
+  const currentVersionIds = items
+    .map(item => item.currentVersionId)
+    .filter((id): id is string => Boolean(id));
+  const versionRows = currentVersionIds.length > 0
+    ? await db.query.versions.findMany({
+        where: inArray(versions.id, currentVersionIds),
+        columns: { id: true, version: true, build: true, runtimeVersion: true },
+      })
+    : [];
+  const versionMap = new Map(versionRows.map(v => [v.id, v]));
 
   // 格式化响应
   const formattedItems = items.map((item) => {
@@ -102,12 +103,12 @@ export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
       userId: item.userId || undefined,
       platform: item.platform || undefined,
       currentVersionId: item.currentVersionId || undefined,
-      currentVersion: item.currentVersion
+      currentVersion: item.currentVersionId && versionMap.get(item.currentVersionId)
         ? {
-            id: item.currentVersion.id,
-            version: item.currentVersion.version,
-            build: item.currentVersion.build,
-            runtimeVersion: item.currentVersion.runtimeVersion,
+            id: versionMap.get(item.currentVersionId)!.id,
+            version: versionMap.get(item.currentVersionId)!.version,
+            build: versionMap.get(item.currentVersionId)!.build,
+            runtimeVersion: versionMap.get(item.currentVersionId)!.runtimeVersion,
           }
         : undefined,
       lastUpdateAt: item.lastUpdateAt || undefined,
@@ -146,16 +147,6 @@ export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
 
   const user = await db.query.appUsers.findFirst({
     where: and(eq(appUsers.id, id), eq(appUsers.appId, appId)),
-    with: {
-      currentVersion: {
-        columns: {
-          id: true,
-          version: true,
-          build: true,
-          runtimeVersion: true,
-        },
-      },
-    },
   });
 
   if (!user) {
@@ -167,6 +158,13 @@ export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
       HttpStatusCodes.NOT_FOUND,
     );
   }
+
+  const currentVersion = user.currentVersionId
+    ? await db.query.versions.findFirst({
+        where: eq(versions.id, user.currentVersionId),
+        columns: { id: true, version: true, runtimeVersion: true },
+      })
+    : null;
 
   // 解析设备信息
   let deviceInfo: Record<string, unknown> | undefined;
@@ -182,7 +180,7 @@ export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
   // 获取更新历史（简化版，实际可以从操作日志表获取）
   const updateHistory = user.lastUpdateAt
     ? [{
-        version: user.currentVersion?.version || "",
+        version: currentVersion?.version || "",
         updatedAt: user.lastUpdateAt,
         status: "success",
       }]
@@ -193,11 +191,11 @@ export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
     deviceId: user.deviceId,
     userId: user.userId || undefined,
     currentVersionId: user.currentVersionId || undefined,
-    currentVersion: user.currentVersion
+    currentVersion: currentVersion
       ? {
-          id: user.currentVersion.id,
-          version: user.currentVersion.version,
-          runtimeVersion: user.currentVersion.runtimeVersion,
+          id: currentVersion.id,
+          version: currentVersion.version,
+          runtimeVersion: currentVersion.runtimeVersion,
         }
       : undefined,
     lastUpdateAt: user.lastUpdateAt || undefined,
@@ -253,14 +251,28 @@ export async function updateVersion(c: Parameters<AppRouteHandler<UpdateVersionR
   }
 
   // 创建更新任务
-  const [task] = await db.insert(updateTasks).values({
+  const [{ id: taskId }] = await db.insert(updateTasks).values({
     appId,
     versionId: data.versionId,
     type: "targeted",
     status: "pending",
     targetUserIds: JSON.stringify([id]),
     createdBy: userPayload.userId,
-  }).returning();
+  }).$returningId();
+
+  const task = await db.query.updateTasks.findFirst({
+    where: eq(updateTasks.id, taskId),
+  });
+
+  if (!task) {
+    return errorResponse(
+      c,
+      "INTERNAL_ERROR",
+      "创建更新任务失败",
+      undefined,
+      HttpStatusCodes.INTERNAL_SERVER_ERROR,
+    );
+  }
 
   return successResponse(c, {
     taskId: task.id,
@@ -299,14 +311,28 @@ export async function batchUpdate(c: Parameters<AppRouteHandler<BatchUpdateRoute
   }
 
   // 创建批量更新任务
-  const [task] = await db.insert(updateTasks).values({
+  const [{ id: taskId }] = await db.insert(updateTasks).values({
     appId,
     versionId: data.versionId,
     type: "targeted",
     status: "pending",
     targetUserIds: JSON.stringify(data.userIds),
     createdBy: userPayload.userId,
-  }).returning();
+  }).$returningId();
+
+  const task = await db.query.updateTasks.findFirst({
+    where: eq(updateTasks.id, taskId),
+  });
+
+  if (!task) {
+    return errorResponse(
+      c,
+      "INTERNAL_ERROR",
+      "创建批量更新任务失败",
+      undefined,
+      HttpStatusCodes.INTERNAL_SERVER_ERROR,
+    );
+  }
 
   return successResponse(c, {
     taskId: task.id,
@@ -360,14 +386,28 @@ export async function rollback(c: Parameters<AppRouteHandler<RollbackRoute>>[0])
   }
 
   // 创建回滚任务
-  const [task] = await db.insert(updateTasks).values({
+  const [{ id: taskId }] = await db.insert(updateTasks).values({
     appId,
     versionId: data.toVersionId,
     type: "targeted",
     status: "pending",
     targetUserIds: JSON.stringify([id]),
     createdBy: userPayload.userId,
-  }).returning();
+  }).$returningId();
+
+  const task = await db.query.updateTasks.findFirst({
+    where: eq(updateTasks.id, taskId),
+  });
+
+  if (!task) {
+    return errorResponse(
+      c,
+      "INTERNAL_ERROR",
+      "创建回滚任务失败",
+      undefined,
+      HttpStatusCodes.INTERNAL_SERVER_ERROR,
+    );
+  }
 
   return successResponse(c, {
     taskId: task.id,
@@ -409,13 +449,26 @@ export async function setTargetVersion(c: Parameters<AppRouteHandler<SetTargetVe
   }
 
   // 更新用户的目标版本ID
-  const [updatedUser] = await db.update(appUsers)
+  await db.update(appUsers)
     .set({
       targetVersionId: versionId,
       updatedAt: new Date(),
     })
-    .where(eq(appUsers.id, id))
-    .returning();
+    .where(eq(appUsers.id, id));
+
+  const updatedUser = await db.query.appUsers.findFirst({
+    where: eq(appUsers.id, id),
+  });
+
+  if (!updatedUser) {
+    return errorResponse(
+      c,
+      "INTERNAL_ERROR",
+      "更新目标版本失败",
+      undefined,
+      HttpStatusCodes.INTERNAL_SERVER_ERROR,
+    );
+  }
 
   return successResponse(c, {
     id: updatedUser.id,

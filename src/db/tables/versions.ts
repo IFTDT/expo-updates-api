@@ -1,4 +1,5 @@
-import { boolean, index, int, mysqlTable, text, timestamp, unique, varchar } from "drizzle-orm/mysql-core";
+import { sql } from "drizzle-orm";
+import { boolean, datetime, index, int, mysqlTable, text, timestamp, unique, varchar } from "drizzle-orm/mysql-core";
 
 import { apps } from "./apps";
 import { users } from "./users";
@@ -19,15 +20,14 @@ export const versions = mysqlTable("versions", {
   fileSize: int("file_size").notNull(), // bytes
   checksum: varchar("checksum", { length: 255 }).notNull(), // sha256:abc123...
   isMandatory: boolean("is_mandatory").notNull().default(false),
-  publishedAt: timestamp("published_at"),
-  rolledBackAt: timestamp("rolled_back_at"),
+  publishedAt: datetime("published_at"),
+  rolledBackAt: datetime("rolled_back_at"),
   publishedBy: varchar("published_by", { length: 36 }).references(() => users.id),
   createdAt: timestamp("created_at")
-    .defaultNow()
+    .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),
   updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .onUpdateNow()
+    .default(sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`)
     .notNull(),
 }, table => [
   index("versions_app_id_idx").on(table.appId),

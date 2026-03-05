@@ -1,5 +1,5 @@
 import AdmZip from "adm-zip";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { mkdir, readdir, unlink, writeFile } from "node:fs/promises";
@@ -10,7 +10,7 @@ import * as tar from "tar";
 import type { AppRouteHandler } from "@/lib/types";
 
 import db from "@/db";
-import { apps, appUsers, updateTasks, uploads, versions } from "@/db/schema";
+import { apps, appUsers, updateTasks, uploads, users, versions } from "@/db/schema";
 import { buildOssFileUrl, uploadDirectoryToOss } from "@/lib/oss-upload";
 import { errorResponse, paginationResponse, successResponse } from "@/lib/response";
 
@@ -57,15 +57,18 @@ export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
     limit,
     offset,
     orderBy: [desc(versions.createdAt)],
-    with: {
-      publisher: {
-        columns: {
-          id: true,
-          name: true,
-        },
-      },
-    },
   });
+
+  const publisherIds = items
+    .map(item => item.publishedBy)
+    .filter((id): id is string => Boolean(id));
+  const publishers = publisherIds.length > 0
+    ? await db.query.users.findMany({
+        where: inArray(users.id, publisherIds),
+        columns: { id: true, name: true },
+      })
+    : [];
+  const publisherMap = new Map(publishers.map(p => [p.id, p]));
 
   // 获取每个版本的用户数
   const formattedItems = await Promise.all(items.map(async (item) => {
@@ -89,10 +92,10 @@ export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
       isMandatory: item.isMandatory,
       publishedAt: item.publishedAt || undefined,
       publishedBy: item.publishedBy || undefined,
-      publisher: item.publisher
+      publisher: item.publishedBy && publisherMap.get(item.publishedBy)
         ? {
-            id: item.publisher.id,
-            name: item.publisher.name,
+            id: publisherMap.get(item.publishedBy)!.id,
+            name: publisherMap.get(item.publishedBy)!.name,
           }
         : undefined,
       userCount: userCount.length,
@@ -123,14 +126,6 @@ export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
 
   const version = await db.query.versions.findFirst({
     where: and(eq(versions.id, id), eq(versions.appId, appId)),
-    with: {
-      publisher: {
-        columns: {
-          id: true,
-          name: true,
-        },
-      },
-    },
   });
 
   if (!version) {
@@ -142,6 +137,13 @@ export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
       HttpStatusCodes.NOT_FOUND,
     );
   }
+
+  const publisher = version.publishedBy
+    ? await db.query.users.findFirst({
+        where: eq(users.id, version.publishedBy),
+        columns: { id: true, name: true },
+      })
+    : null;
 
   // 统计使用该版本的用户数
   const userCount = await db.query.appUsers.findMany({
@@ -164,10 +166,10 @@ export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
     publishedAt: version.publishedAt || undefined,
     rolledBackAt: version.rolledBackAt || undefined,
     publishedBy: version.publishedBy || undefined,
-    publisher: version.publisher
+    publisher: publisher
       ? {
-          id: version.publisher.id,
-          name: version.publisher.name,
+          id: publisher.id,
+          name: publisher.name,
         }
       : undefined,
     userCount: userCount.length,
@@ -536,7 +538,7 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
     : `/${path.posix.join("uploads", appId, runtimeVersion, sanitizedVersionSegment, timestamp, metadataRelativePath.split(path.sep).join(path.posix.sep))}`;
 
   // 创建上传记录
-  const [uploadRecord] = await db.insert(uploads).values({
+  const [{ id: uploadId }] = await db.insert(uploads).values({
     appId,
     fileUrl,
     fileSize: file.size,
@@ -546,19 +548,19 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
     uploadedBytes: file.size,
     totalBytes: file.size,
     uploadedBy: userPayload.userId,
-  }).returning();
+  }).$returningId();
 
   // 创建版本
   const publishedAt = publishTime === "now" ? new Date() : scheduledAt;
   const status = publishedAt ? "published" : "draft";
 
-  const [newVersion] = await db.insert(versions).values({
+  const [{ id: newVersionId }] = await db.insert(versions).values({
     appId,
     version,
     build,
     runtimeVersion,
     name,
-    description,
+    description: description ?? null,
     status,
     fileUrl,
     fileSize: file.size,
@@ -566,12 +568,26 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
     isMandatory,
     publishedAt,
     publishedBy: publishedAt ? userPayload.userId : undefined,
-  }).returning();
+  }).$returningId();
+
+  const newVersion = await db.query.versions.findFirst({
+    where: eq(versions.id, newVersionId),
+  });
+
+  if (!newVersion) {
+    return errorResponse(
+      c,
+      "INTERNAL_ERROR",
+      "版本创建失败",
+      undefined,
+      HttpStatusCodes.INTERNAL_SERVER_ERROR,
+    );
+  }
 
   // 如果立即发布，创建更新任务
   let taskId: string | undefined;
   if (status === "published") {
-    const [task] = await db.insert(updateTasks).values({
+    const [{ id }] = await db.insert(updateTasks).values({
       appId,
       versionId: newVersion.id,
       type: "full",
@@ -580,8 +596,8 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
       targetUserIds: JSON.stringify([]),
       targetGroupIds: JSON.stringify([]),
       createdBy: userPayload.userId,
-    }).returning();
-    taskId = task.id;
+    }).$returningId();
+    taskId = id;
   }
 
   // 更新应用的当前版本
@@ -600,7 +616,7 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
       version: newVersion.version,
       status: newVersion.status,
       publishedAt: newVersion.publishedAt || undefined,
-      uploadId: uploadRecord.id,
+      uploadId,
       taskId,
     },
     "版本创建成功",
@@ -683,13 +699,13 @@ export async function createFromUrl(c: Parameters<AppRouteHandler<CreateFromUrlR
   const publishedAt = publishTime === "now" ? new Date() : scheduledAt;
   const status = publishedAt ? "published" : "draft";
 
-  const [newVersion] = await db.insert(versions).values({
+  const [{ id: newVersionId }] = await db.insert(versions).values({
     appId,
     version: data.version,
     build: data.build,
     runtimeVersion: data.runtimeVersion,
     name: data.name,
-    description: data.description,
+    description: data.description ?? null,
     status,
     fileUrl: data.fileUrl,
     fileSize: data.fileSize,
@@ -697,11 +713,25 @@ export async function createFromUrl(c: Parameters<AppRouteHandler<CreateFromUrlR
     isMandatory: data.isMandatory ?? false,
     publishedAt,
     publishedBy: publishedAt ? userPayload.userId : undefined,
-  }).returning();
+  }).$returningId();
+
+  const newVersion = await db.query.versions.findFirst({
+    where: eq(versions.id, newVersionId),
+  });
+
+  if (!newVersion) {
+    return errorResponse(
+      c,
+      "INTERNAL_ERROR",
+      "版本创建失败",
+      undefined,
+      HttpStatusCodes.INTERNAL_SERVER_ERROR,
+    );
+  }
 
   let taskId: string | undefined;
   if (status === "published") {
-    const [task] = await db.insert(updateTasks).values({
+    const [{ id }] = await db.insert(updateTasks).values({
       appId,
       versionId: newVersion.id,
       type: "full",
@@ -710,8 +740,8 @@ export async function createFromUrl(c: Parameters<AppRouteHandler<CreateFromUrlR
       targetUserIds: JSON.stringify([]),
       targetGroupIds: JSON.stringify([]),
       createdBy: userPayload.userId,
-    }).returning();
-    taskId = task.id;
+    }).$returningId();
+    taskId = id;
   }
 
   await db.update(apps)
@@ -788,16 +818,16 @@ export async function publish(c: Parameters<AppRouteHandler<PublishRoute>>[0]) {
     .where(eq(versions.id, id));
 
   // 创建更新任务
-  const [task] = await db.insert(updateTasks).values({
+  const [{ id: taskId }] = await db.insert(updateTasks).values({
     appId,
     versionId: id,
     type: data.type,
     status: scheduledAt ? "pending" : "pending",
     scheduledAt,
-    targetUserIds: data.targetUserIds.length > 0 ? JSON.stringify(data.targetUserIds) : undefined,
-    targetGroupIds: data.targetGroupIds.length > 0 ? JSON.stringify(data.targetGroupIds) : undefined,
+    targetUserIds: data.targetUserIds.length > 0 ? JSON.stringify(data.targetUserIds) : null,
+    targetGroupIds: data.targetGroupIds.length > 0 ? JSON.stringify(data.targetGroupIds) : null,
     createdBy: userPayload.userId,
-  }).returning();
+  }).$returningId();
 
   // 更新应用的当前版本
   await db.update(apps)
@@ -809,8 +839,8 @@ export async function publish(c: Parameters<AppRouteHandler<PublishRoute>>[0]) {
     .where(eq(apps.id, appId));
 
   return successResponse(c, {
-    taskId: task.id,
-    status: task.status,
+    taskId,
+    status: scheduledAt ? "pending" : "pending",
   }, "发布任务已创建");
 }
 
@@ -869,15 +899,15 @@ export async function rollback(c: Parameters<AppRouteHandler<RollbackRoute>>[0])
     .where(eq(versions.id, id));
 
   // 创建回滚任务
-  const [task] = await db.insert(updateTasks).values({
+  const [{ id: taskId }] = await db.insert(updateTasks).values({
     appId,
     versionId: data.toVersionId,
     type: data.type,
     status: "pending",
-    targetUserIds: data.targetUserIds.length > 0 ? JSON.stringify(data.targetUserIds) : undefined,
-    targetGroupIds: data.targetGroupIds.length > 0 ? JSON.stringify(data.targetGroupIds) : undefined,
+    targetUserIds: data.targetUserIds.length > 0 ? JSON.stringify(data.targetUserIds) : null,
+    targetGroupIds: data.targetGroupIds.length > 0 ? JSON.stringify(data.targetGroupIds) : null,
     createdBy: userPayload.userId,
-  }).returning();
+  }).$returningId();
 
   // 更新应用的当前版本为目标版本
   await db.update(apps)
@@ -889,8 +919,8 @@ export async function rollback(c: Parameters<AppRouteHandler<RollbackRoute>>[0])
     .where(eq(apps.id, appId));
 
   return successResponse(c, {
-    taskId: task.id,
-    status: task.status,
+    taskId,
+    status: "pending",
   }, "回滚任务已创建");
 }
 
