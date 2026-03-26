@@ -268,8 +268,6 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
   const runtimeVersion = typeof body.runtimeVersion === "string" ? body.runtimeVersion.trim() : undefined;
   const name = typeof body.name === "string" ? body.name.trim() : undefined;
   const description = typeof body.description === "string" ? body.description : undefined;
-  const publishTimeRaw = typeof body.publishTime === "string" && body.publishTime.length > 0 ? body.publishTime : "now";
-  const scheduledAtRaw = typeof body.scheduledAt === "string" && body.scheduledAt.length > 0 ? body.scheduledAt : undefined;
   const isMandatoryRaw = body.isMandatory;
   const uploadToOssRaw = body.uploadToOss;
 
@@ -331,45 +329,6 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
       { field: "name" },
       HttpStatusCodes.BAD_REQUEST,
     );
-  }
-
-  const publishTime = publishTimeRaw === "scheduled" ? "scheduled" : "now";
-
-  let scheduledAt: Date | null = null;
-  if (publishTime === "scheduled") {
-    if (!scheduledAtRaw) {
-      return errorResponse(
-        c,
-        "VALIDATION_ERROR",
-        "定时发布时间不能为空",
-        { field: "scheduledAt" },
-        HttpStatusCodes.BAD_REQUEST,
-      );
-    }
-    const parsedDate = new Date(scheduledAtRaw);
-    if (Number.isNaN(parsedDate.getTime())) {
-      return errorResponse(
-        c,
-        "VALIDATION_ERROR",
-        "定时发布时间格式不正确",
-        { field: "scheduledAt" },
-        HttpStatusCodes.BAD_REQUEST,
-      );
-    }
-    scheduledAt = parsedDate;
-  }
-  else if (scheduledAtRaw) {
-    const parsedDate = new Date(scheduledAtRaw);
-    if (Number.isNaN(parsedDate.getTime())) {
-      return errorResponse(
-        c,
-        "VALIDATION_ERROR",
-        "定时发布时间格式不正确",
-        { field: "scheduledAt" },
-        HttpStatusCodes.BAD_REQUEST,
-      );
-    }
-    scheduledAt = parsedDate;
   }
 
   const isMandatory = typeof isMandatoryRaw === "string"
@@ -550,10 +509,7 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
     uploadedBy: userPayload.userId,
   }).$returningId();
 
-  // 创建版本
-  const publishedAt = publishTime === "now" ? new Date() : scheduledAt;
-  const status = publishedAt ? "published" : "draft";
-
+  // 创建版本（仅草稿；发布请调用发布接口）
   const [{ id: newVersionId }] = await db.insert(versions).values({
     appId,
     version,
@@ -561,13 +517,12 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
     runtimeVersion,
     name,
     description: description ?? null,
-    status,
+    status: "draft",
     fileUrl,
     fileSize: file.size,
     checksum,
     isMandatory,
-    publishedAt,
-    publishedBy: publishedAt ? userPayload.userId : undefined,
+    publishedAt: null,
   }).$returningId();
 
   const newVersion = await db.query.versions.findFirst({
@@ -584,31 +539,6 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
     );
   }
 
-  // 如果立即发布，创建更新任务
-  let taskId: string | undefined;
-  if (status === "published") {
-    const [{ id }] = await db.insert(updateTasks).values({
-      appId,
-      versionId: newVersion.id,
-      type: "full",
-      status: "pending",
-      scheduledAt: publishTime === "scheduled" && scheduledAt ? scheduledAt : undefined,
-      targetUserIds: JSON.stringify([]),
-      targetGroupIds: JSON.stringify([]),
-      createdBy: userPayload.userId,
-    }).$returningId();
-    taskId = id;
-  }
-
-  // 更新应用的当前版本
-  await db.update(apps)
-    .set({
-      currentVersionId: newVersion.id,
-      currentVersion: version,
-      updatedAt: new Date(),
-    })
-    .where(eq(apps.id, appId));
-
   return successResponse(
     c,
     {
@@ -617,7 +547,6 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
       status: newVersion.status,
       publishedAt: newVersion.publishedAt || undefined,
       uploadId,
-      taskId,
     },
     "版本创建成功",
     HttpStatusCodes.CREATED,
@@ -669,36 +598,6 @@ export async function createFromUrl(c: Parameters<AppRouteHandler<CreateFromUrlR
     );
   }
 
-  const publishTime = data.publishTime || "now";
-
-  let scheduledAt: Date | null = null;
-  if (publishTime === "scheduled" && data.scheduledAt) {
-    const parsedDate = new Date(data.scheduledAt);
-    if (Number.isNaN(parsedDate.getTime())) {
-      return errorResponse(
-        c,
-        "VALIDATION_ERROR",
-        "定时发布时间格式不正确",
-        { field: "scheduledAt" },
-        HttpStatusCodes.BAD_REQUEST,
-      );
-    }
-    scheduledAt = parsedDate;
-  }
-
-  if (publishTime === "scheduled" && !scheduledAt) {
-    return errorResponse(
-      c,
-      "VALIDATION_ERROR",
-      "定时发布时间不能为空",
-      { field: "scheduledAt" },
-      HttpStatusCodes.BAD_REQUEST,
-    );
-  }
-
-  const publishedAt = publishTime === "now" ? new Date() : scheduledAt;
-  const status = publishedAt ? "published" : "draft";
-
   const [{ id: newVersionId }] = await db.insert(versions).values({
     appId,
     version: data.version,
@@ -706,13 +605,12 @@ export async function createFromUrl(c: Parameters<AppRouteHandler<CreateFromUrlR
     runtimeVersion: data.runtimeVersion,
     name: data.name,
     description: data.description ?? null,
-    status,
+    status: "draft",
     fileUrl: data.fileUrl,
     fileSize: data.fileSize,
     checksum: data.checksum,
     isMandatory: data.isMandatory ?? false,
-    publishedAt,
-    publishedBy: publishedAt ? userPayload.userId : undefined,
+    publishedAt: null,
   }).$returningId();
 
   const newVersion = await db.query.versions.findFirst({
@@ -729,29 +627,6 @@ export async function createFromUrl(c: Parameters<AppRouteHandler<CreateFromUrlR
     );
   }
 
-  let taskId: string | undefined;
-  if (status === "published") {
-    const [{ id }] = await db.insert(updateTasks).values({
-      appId,
-      versionId: newVersion.id,
-      type: "full",
-      status: "pending",
-      scheduledAt: publishTime === "scheduled" && scheduledAt ? scheduledAt : undefined,
-      targetUserIds: JSON.stringify([]),
-      targetGroupIds: JSON.stringify([]),
-      createdBy: userPayload.userId,
-    }).$returningId();
-    taskId = id;
-  }
-
-  await db.update(apps)
-    .set({
-      currentVersionId: newVersion.id,
-      currentVersion: data.version,
-      updatedAt: new Date(),
-    })
-    .where(eq(apps.id, appId));
-
   return successResponse(
     c,
     {
@@ -759,7 +634,6 @@ export async function createFromUrl(c: Parameters<AppRouteHandler<CreateFromUrlR
       version: newVersion.version,
       status: newVersion.status,
       publishedAt: newVersion.publishedAt || undefined,
-      taskId,
     },
     "版本创建成功",
     HttpStatusCodes.CREATED,

@@ -4,7 +4,7 @@ import * as HttpStatusCodes from "stoker/http-status-codes";
 import type { AppRouteHandler } from "@/lib/types";
 
 import db from "@/db";
-import { appUsers, apps, userApps, users, versions } from "@/db/schema";
+import { apps, appUsers, userApps, users, versions } from "@/db/schema";
 import { errorResponse, paginationResponse, successResponse } from "@/lib/response";
 
 import type { CreateRoute, GetOneRoute, ListRoute, RemoveRoute, SetCurrentVersionRoute, UpdateRoute } from "./apps.routes";
@@ -138,6 +138,7 @@ export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
     description: app.description,
     status: app.status,
     currentVersion: app.currentVersion,
+    currentVersionId: app.currentVersionId,
     userCount,
     updateCount,
     versions: updateCount,

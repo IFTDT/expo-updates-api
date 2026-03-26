@@ -80,6 +80,7 @@ export const getOne = createRoute({
           description: z.string().nullable().optional(),
           status: z.string(),
           currentVersion: z.string().nullable().optional(),
+          currentVersionId: z.string().nullable().optional(),
           userCount: z.number().optional(),
           updateCount: z.number().optional(),
           versions: z.number().optional(),
