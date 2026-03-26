@@ -1,5 +1,5 @@
 import AdmZip from "adm-zip";
-import { and, count, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull } from "drizzle-orm";
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { mkdir, readdir, unlink, writeFile } from "node:fs/promises";
@@ -41,7 +41,7 @@ export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
   // 构建查询条件
   const conditions = [eq(versions.appId, appId)];
 
-  const where = and(...conditions);
+  const where = and(...conditions, isNull(versions.deletedAt));
 
   // 获取总数
   const totalResult = await db.select({ count: count() }).from(versions).where(where);
@@ -119,7 +119,7 @@ export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
   }
 
   const version = await db.query.versions.findFirst({
-    where: and(eq(versions.id, id), eq(versions.appId, appId)),
+    where: and(eq(versions.id, id), eq(versions.appId, appId), isNull(versions.deletedAt)),
   });
 
   if (!version) {
@@ -640,7 +640,7 @@ export async function publish(c: Parameters<AppRouteHandler<PublishRoute>>[0]) {
 
   // 验证版本是否存在
   const version = await db.query.versions.findFirst({
-    where: and(eq(versions.id, id), eq(versions.appId, appId)),
+    where: and(eq(versions.id, id), eq(versions.appId, appId), isNull(versions.deletedAt)),
   });
 
   if (!version) {
@@ -706,7 +706,7 @@ export async function rollback(c: Parameters<AppRouteHandler<RollbackRoute>>[0])
 
   // 验证当前版本
   const currentVersion = await db.query.versions.findFirst({
-    where: and(eq(versions.id, id), eq(versions.appId, appId)),
+    where: and(eq(versions.id, id), eq(versions.appId, appId), isNull(versions.deletedAt)),
   });
 
   if (!currentVersion) {
@@ -721,7 +721,7 @@ export async function rollback(c: Parameters<AppRouteHandler<RollbackRoute>>[0])
 
   // 验证目标版本
   const toVersion = await db.query.versions.findFirst({
-    where: and(eq(versions.id, data.toVersionId), eq(versions.appId, appId)),
+    where: and(eq(versions.id, data.toVersionId), eq(versions.appId, appId), isNull(versions.deletedAt)),
   });
 
   if (!toVersion) {
@@ -765,7 +765,7 @@ export async function remove(c: Parameters<AppRouteHandler<RemoveRoute>>[0]) {
 
   // 验证版本是否存在
   const version = await db.query.versions.findFirst({
-    where: and(eq(versions.id, id), eq(versions.appId, appId)),
+    where: and(eq(versions.id, id), eq(versions.appId, appId), isNull(versions.deletedAt)),
   });
 
   if (!version) {
@@ -793,8 +793,12 @@ export async function remove(c: Parameters<AppRouteHandler<RemoveRoute>>[0]) {
     );
   }
 
-  // 删除版本
-  await db.delete(versions)
+  // 假删除：写入 deleted_at，而不是物理删除行
+  await db.update(versions)
+    .set({
+      deletedAt: new Date(),
+      updatedAt: new Date(),
+    })
     .where(eq(versions.id, id));
 
   return successResponse(c, null, "版本删除成功");

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, index, int, mysqlTable, text, timestamp, unique, varchar } from "drizzle-orm/mysql-core";
+import { boolean, datetime, index, int, mysqlTable, text, timestamp, unique, varchar } from "drizzle-orm/mysql-core";
 
 import { apps } from "./apps";
 import { users } from "./users";
@@ -20,6 +20,7 @@ export const versions = mysqlTable("versions", {
   checksum: varchar("checksum", { length: 255 }).notNull(), // sha256:abc123...
   isMandatory: boolean("is_mandatory").notNull().default(false),
   publishedBy: varchar("published_by", { length: 36 }).references(() => users.id),
+  deletedAt: datetime("deleted_at"),
   createdAt: timestamp("created_at")
     .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),

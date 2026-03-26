@@ -1,4 +1,4 @@
-import { and, desc, eq, or } from "drizzle-orm";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
 import FormData from "form-data";
 import mime from "mime";
 import fs from "node:fs/promises";
@@ -864,7 +864,11 @@ async function resolveUpdateBundlePath(
   let targetUpdateBundlePath: string | null = null;
   if (targetVersionId) {
     const version = await db.query.versions.findFirst({
-      where: and(eq(versions.id, targetVersionId), eq(versions.appId, app.id)),
+      where: and(
+        eq(versions.id, targetVersionId),
+        eq(versions.appId, app.id),
+        isNull(versions.deletedAt),
+      ),
     });
 
     if (!version) {

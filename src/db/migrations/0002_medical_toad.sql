@@ -1,0 +1,1 @@
+ALTER TABLE `versions` ADD `deleted_at` datetime;

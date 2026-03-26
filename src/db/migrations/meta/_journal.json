@@ -15,6 +15,13 @@
       "when": 1774513306193,
       "tag": "0001_adorable_mikhail_rasputin",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1774515048758,
+      "tag": "0002_medical_toad",
+      "breakpoints": true
     }
   ]
 }
