@@ -18,7 +18,6 @@ export const list = createRoute({
     params: AppIdParamsSchema,
     query: z.object({
       ...paginationQuerySchema.shape,
-      status: z.enum(["draft", "published", "rolled_back"]).optional(),
       ...sortQuerySchema.shape,
     }),
   },
@@ -34,12 +33,10 @@ export const list = createRoute({
             runtimeVersion: z.string(),
             name: z.string(),
             description: z.string().nullable().optional(),
-            status: z.string(),
             fileUrl: z.string(),
             fileSize: z.number(),
             checksum: z.string(),
             isMandatory: z.boolean(),
-            publishedAt: z.date().nullable().optional(),
             publishedBy: z.string().nullable().optional(),
             publisher: z.object({
               id: z.string(),
@@ -81,13 +78,10 @@ export const getOne = createRoute({
           runtimeVersion: z.string(),
           name: z.string(),
           description: z.string().nullable().optional(),
-          status: z.string(),
           fileUrl: z.string(),
           fileSize: z.number(),
           checksum: z.string(),
           isMandatory: z.boolean(),
-          publishedAt: z.date().nullable().optional(),
-          rolledBackAt: z.date().nullable().optional(),
           publishedBy: z.string().nullable().optional(),
           publisher: z.object({
             id: z.string(),
@@ -147,8 +141,6 @@ export const create = createRoute({
         data: z.object({
           id: z.string(),
           version: z.string(),
-          status: z.string(),
-          publishedAt: z.date().nullable().optional(),
           uploadId: z.string(),
         }),
         message: z.string(),
@@ -188,8 +180,6 @@ export const createFromUrl = createRoute({
         data: z.object({
           id: z.string(),
           version: z.string(),
-          status: z.string(),
-          publishedAt: z.date().nullable().optional(),
         }),
         message: z.string(),
       }),

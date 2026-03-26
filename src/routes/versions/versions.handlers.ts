@@ -41,10 +41,6 @@ export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
   // 构建查询条件
   const conditions = [eq(versions.appId, appId)];
 
-  if (query.status) {
-    conditions.push(eq(versions.status, query.status));
-  }
-
   const where = and(...conditions);
 
   // 获取总数
@@ -85,12 +81,10 @@ export async function list(c: Parameters<AppRouteHandler<ListRoute>>[0]) {
       runtimeVersion: item.runtimeVersion,
       name: item.name,
       description: item.description,
-      status: item.status,
       fileUrl: item.fileUrl,
       fileSize: item.fileSize,
       checksum: item.checksum,
       isMandatory: item.isMandatory,
-      publishedAt: item.publishedAt || undefined,
       publishedBy: item.publishedBy || undefined,
       publisher: item.publishedBy && publisherMap.get(item.publishedBy)
         ? {
@@ -158,13 +152,10 @@ export async function getOne(c: Parameters<AppRouteHandler<GetOneRoute>>[0]) {
     runtimeVersion: version.runtimeVersion,
     name: version.name,
     description: version.description,
-    status: version.status,
     fileUrl: version.fileUrl,
     fileSize: version.fileSize,
     checksum: version.checksum,
     isMandatory: version.isMandatory,
-    publishedAt: version.publishedAt || undefined,
-    rolledBackAt: version.rolledBackAt || undefined,
     publishedBy: version.publishedBy || undefined,
     publisher: publisher
       ? {
@@ -509,7 +500,6 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
     uploadedBy: userPayload.userId,
   }).$returningId();
 
-  // 创建版本（仅草稿；发布请调用发布接口）
   const [{ id: newVersionId }] = await db.insert(versions).values({
     appId,
     version,
@@ -517,12 +507,11 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
     runtimeVersion,
     name,
     description: description ?? null,
-    status: "draft",
     fileUrl,
     fileSize: file.size,
     checksum,
     isMandatory,
-    publishedAt: null,
+    publishedBy: userPayload.userId,
   }).$returningId();
 
   const newVersion = await db.query.versions.findFirst({
@@ -544,8 +533,6 @@ export async function create(c: Parameters<AppRouteHandler<CreateRoute>>[0]) {
     {
       id: newVersion.id,
       version: newVersion.version,
-      status: newVersion.status,
-      publishedAt: newVersion.publishedAt || undefined,
       uploadId,
     },
     "版本创建成功",
@@ -605,12 +592,10 @@ export async function createFromUrl(c: Parameters<AppRouteHandler<CreateFromUrlR
     runtimeVersion: data.runtimeVersion,
     name: data.name,
     description: data.description ?? null,
-    status: "draft",
     fileUrl: data.fileUrl,
     fileSize: data.fileSize,
     checksum: data.checksum,
     isMandatory: data.isMandatory ?? false,
-    publishedAt: null,
   }).$returningId();
 
   const newVersion = await db.query.versions.findFirst({
@@ -632,8 +617,6 @@ export async function createFromUrl(c: Parameters<AppRouteHandler<CreateFromUrlR
     {
       id: newVersion.id,
       version: newVersion.version,
-      status: newVersion.status,
-      publishedAt: newVersion.publishedAt || undefined,
     },
     "版本创建成功",
     HttpStatusCodes.CREATED,
@@ -670,22 +653,10 @@ export async function publish(c: Parameters<AppRouteHandler<PublishRoute>>[0]) {
     );
   }
 
-  if (version.status === "published") {
-    return errorResponse(
-      c,
-      "VALIDATION_ERROR",
-      "版本已发布",
-      undefined,
-      HttpStatusCodes.BAD_REQUEST,
-    );
-  }
-
-  // 更新版本状态
+  // 创建发布任务（发布不再依赖版本表里的 status/publishedAt 字段）
   const scheduledAt = data.scheduledAt ? new Date(data.scheduledAt) : null;
   await db.update(versions)
     .set({
-      status: "published",
-      publishedAt: scheduledAt || new Date(),
       publishedBy: userPayload.userId,
       updatedAt: new Date(),
     })
@@ -763,15 +734,6 @@ export async function rollback(c: Parameters<AppRouteHandler<RollbackRoute>>[0])
     );
   }
 
-  // 更新当前版本状态为已回滚
-  await db.update(versions)
-    .set({
-      status: "rolled_back",
-      rolledBackAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(versions.id, id));
-
   // 创建回滚任务
   const [{ id: taskId }] = await db.insert(updateTasks).values({
     appId,
@@ -816,12 +778,16 @@ export async function remove(c: Parameters<AppRouteHandler<RemoveRoute>>[0]) {
     );
   }
 
-  // 只能删除草稿版本
-  if (version.status !== "draft") {
+  // 删除当前版本会影响应用默认版本；禁止删除当前版本
+  const app = await db.query.apps.findFirst({
+    where: eq(apps.id, appId),
+    columns: { currentVersionId: true },
+  });
+  if (app?.currentVersionId === id) {
     return errorResponse(
       c,
       "VALIDATION_ERROR",
-      "只能删除草稿版本",
+      "不能删除当前应用版本",
       undefined,
       HttpStatusCodes.BAD_REQUEST,
     );

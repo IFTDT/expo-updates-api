@@ -114,13 +114,12 @@ export async function getAppStats(c: Parameters<AppRouteHandler<GetAppStatsRoute
     .map(v => v.versionId)
     .filter((id): id is string => id !== null);
 
-  // 查询这些版本ID对应的已发布版本
+  // 查询这些版本ID对应的版本（不再依赖 versions.status）
   let activeVersionsCount = 0;
   if (versionIdsWithUsers.length > 0) {
     const activeVersions = await db.query.versions.findMany({
       where: and(
         eq(versions.appId, appId),
-        eq(versions.status, "published"),
         inArray(versions.id, versionIdsWithUsers),
       ),
       columns: { id: true },

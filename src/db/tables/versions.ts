@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, datetime, index, int, mysqlTable, text, timestamp, unique, varchar } from "drizzle-orm/mysql-core";
+import { boolean, index, int, mysqlTable, text, timestamp, unique, varchar } from "drizzle-orm/mysql-core";
 
 import { apps } from "./apps";
 import { users } from "./users";
@@ -15,13 +15,10 @@ export const versions = mysqlTable("versions", {
   runtimeVersion: varchar("runtime_version", { length: 50 }).notNull(), // Runtime 版本
   name: varchar("name", { length: 255 }).notNull(), // 版本名称
   description: text("description"),
-  status: varchar("status", { length: 50 }).notNull().default("draft"), // draft, published, rolled_back
   fileUrl: text("file_url").notNull(),
   fileSize: int("file_size").notNull(), // bytes
   checksum: varchar("checksum", { length: 255 }).notNull(), // sha256:abc123...
   isMandatory: boolean("is_mandatory").notNull().default(false),
-  publishedAt: datetime("published_at"),
-  rolledBackAt: datetime("rolled_back_at"),
   publishedBy: varchar("published_by", { length: 36 }).references(() => users.id),
   createdAt: timestamp("created_at")
     .default(sql`CURRENT_TIMESTAMP`)
@@ -31,7 +28,6 @@ export const versions = mysqlTable("versions", {
     .notNull(),
 }, table => [
   index("versions_app_id_idx").on(table.appId),
-  index("versions_status_idx").on(table.status),
   index("versions_version_idx").on(table.version),
   index("versions_build_idx").on(table.build),
   unique("versions_app_build_unique").on(table.appId, table.build),

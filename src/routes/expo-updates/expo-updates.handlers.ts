@@ -882,20 +882,7 @@ async function resolveUpdateBundlePath(
       };
     }
 
-    if (version.status !== "published") {
-      // 如果 trackDevice 为 true，记录更新失败
-      if (trackDevice) {
-        await updateTaskStats(targetVersionId, app.id, false, appUser?.id || null);
-      }
-      return {
-        ok: false,
-        status: 404,
-        error: {
-          code: "VERSION_NOT_PUBLISHED",
-          message: `Version ${version.version} is not published.`,
-        },
-      };
-    }
+    // 不再依赖版本表的 status 字段；只要版本文件存在即可下发
 
     const normalizedBundlePath = normalizeBundlePathFromFileUrl(version.fileUrl);
     targetUpdateBundlePath = isHttpUrl(normalizedBundlePath)

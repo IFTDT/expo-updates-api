@@ -8,6 +8,13 @@
       "when": 1772677466930,
       "tag": "0000_hot_mantis",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1774513306193,
+      "tag": "0001_adorable_mikhail_rasputin",
+      "breakpoints": true
     }
   ]
 }
